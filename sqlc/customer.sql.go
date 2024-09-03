@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-const createCustomer = `-- name: CreateCustomer :one
+const createCustomer = `-- name: CreateCustomer :exec
 INSERT INTO customers (
     user_id,
     balance,
@@ -17,45 +17,37 @@ INSERT INTO customers (
 ) VALUES (
              $1, $2, $3
          )
-RETURNING id, user_id, balance, stripe_id, created_at, updated_at
 `
 
 type CreateCustomerParams struct {
-	UserID   uint32 `json:"userId"`
+	UserID   uint64 `json:"userId"`
 	Balance  int64  `json:"balance"`
 	StripeID string `json:"stripeId"`
 }
 
-func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (*Customer, error) {
-	row := q.db.QueryRow(ctx, createCustomer, arg.UserID, arg.Balance, arg.StripeID)
-	var i Customer
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Balance,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) error {
+	_, err := q.db.Exec(ctx, createCustomer, arg.UserID, arg.Balance, arg.StripeID)
+	return err
 }
 
 const deleteCustomer = `-- name: DeleteCustomer :exec
 DELETE FROM customers WHERE id = $1
 `
 
-func (q *Queries) DeleteCustomer(ctx context.Context, id uint32) error {
+func (q *Queries) DeleteCustomer(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deleteCustomer, id)
 	return err
 }
 
 const getCustomer = `-- name: GetCustomer :one
+
 SELECT id, user_id, balance, stripe_id, created_at, updated_at
 FROM customers
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetCustomer(ctx context.Context, id uint32) (*Customer, error) {
+// RETURNING id, user_id, balance, stripe_id, created_at, updated_at;
+func (q *Queries) GetCustomer(ctx context.Context, id uint64) (*Customer, error) {
 	row := q.db.QueryRow(ctx, getCustomer, id)
 	var i Customer
 	err := row.Scan(
@@ -108,58 +100,38 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 	return items, nil
 }
 
-const updateCustomer = `-- name: UpdateCustomer :one
+const updateCustomer = `-- name: UpdateCustomer :exec
 UPDATE customers
 SET balance = $2,
     stripe_id = $3,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, user_id, balance, stripe_id, created_at, updated_at
 `
 
 type UpdateCustomerParams struct {
-	ID       uint32 `json:"id"`
+	ID       uint64 `json:"id"`
 	Balance  int64  `json:"balance"`
 	StripeID string `json:"stripeId"`
 }
 
-func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (*Customer, error) {
-	row := q.db.QueryRow(ctx, updateCustomer, arg.ID, arg.Balance, arg.StripeID)
-	var i Customer
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Balance,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) error {
+	_, err := q.db.Exec(ctx, updateCustomer, arg.ID, arg.Balance, arg.StripeID)
+	return err
 }
 
-const updateCustomerBalance = `-- name: UpdateCustomerBalance :one
+const updateCustomerBalance = `-- name: UpdateCustomerBalance :exec
 UPDATE customers
 SET balance = balance + $2,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, user_id, balance, stripe_id, created_at, updated_at
 `
 
 type UpdateCustomerBalanceParams struct {
-	ID      uint32 `json:"id"`
+	ID      uint64 `json:"id"`
 	Balance int64  `json:"balance"`
 }
 
-func (q *Queries) UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerBalanceParams) (*Customer, error) {
-	row := q.db.QueryRow(ctx, updateCustomerBalance, arg.ID, arg.Balance)
-	var i Customer
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Balance,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+func (q *Queries) UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerBalanceParams) error {
+	_, err := q.db.Exec(ctx, updateCustomerBalance, arg.ID, arg.Balance)
+	return err
 }

@@ -76,7 +76,7 @@ const deletePaymentMethod = `-- name: DeletePaymentMethod :exec
 DELETE FROM payment_methods WHERE id = $1
 `
 
-func (q *Queries) DeletePaymentMethod(ctx context.Context, id uint32) error {
+func (q *Queries) DeletePaymentMethod(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deletePaymentMethod, id)
 	return err
 }
@@ -87,7 +87,7 @@ FROM payment_methods
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetPaymentMethod(ctx context.Context, id uint32) (*PaymentMethod, error) {
+func (q *Queries) GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMethod, error) {
 	row := q.db.QueryRow(ctx, getPaymentMethod, id)
 	var i PaymentMethod
 	err := row.Scan(
@@ -173,7 +173,7 @@ RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_ex
 `
 
 type UpdatePaymentMethodParams struct {
-	ID                  uint32            `json:"id"`
+	ID                  uint64            `json:"id"`
 	Type                PaymentMethodType `json:"type"`
 	CardLast4           *string           `json:"cardLast4"`
 	CardBrand           *string           `json:"cardBrand"`

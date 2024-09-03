@@ -20,7 +20,7 @@ WHERE id = $1
 RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at
 `
 
-func (q *Queries) CancelSubscription(ctx context.Context, id uint32) (*Subscription, error) {
+func (q *Queries) CancelSubscription(ctx context.Context, id uint64) (*Subscription, error) {
 	row := q.db.QueryRow(ctx, cancelSubscription, id)
 	var i Subscription
 	err := row.Scan(
@@ -107,7 +107,7 @@ FROM subscriptions
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetSubscription(ctx context.Context, id uint32) (*Subscription, error) {
+func (q *Queries) GetSubscription(ctx context.Context, id uint64) (*Subscription, error) {
 	row := q.db.QueryRow(ctx, getSubscription, id)
 	var i Subscription
 	err := row.Scan(
@@ -193,7 +193,7 @@ RETURNING id, customer_id, price_id, status, current_period_start, current_perio
 `
 
 type UpdateSubscriptionParams struct {
-	ID                 uint32             `json:"id"`
+	ID                 uint64             `json:"id"`
 	PriceID            int32              `json:"priceId"`
 	Status             SubscriptionStatus `json:"status"`
 	CurrentPeriodStart pgtype.Timestamptz `json:"currentPeriodStart"`

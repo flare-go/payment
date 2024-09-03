@@ -401,8 +401,8 @@ func (e SubscriptionStatus) Valid() bool {
 }
 
 type Customer struct {
-	ID        uint32             `json:"id"`
-	UserID    uint32             `json:"userId"`
+	ID        uint64             `json:"id"`
+	UserID    uint64             `json:"userId"`
 	Balance   int64              `json:"balance"`
 	StripeID  string             `json:"stripeId"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
@@ -410,7 +410,7 @@ type Customer struct {
 }
 
 type Invoice struct {
-	ID              uint32             `json:"id"`
+	ID              uint64             `json:"id"`
 	CustomerID      int32              `json:"customerId"`
 	SubscriptionID  *int32             `json:"subscriptionId"`
 	Status          InvoiceStatus      `json:"status"`
@@ -426,7 +426,7 @@ type Invoice struct {
 }
 
 type InvoiceItem struct {
-	ID          uint32             `json:"id"`
+	ID          uint64             `json:"id"`
 	InvoiceID   int32              `json:"invoiceId"`
 	Amount      int64              `json:"amount"`
 	Description *string            `json:"description"`
@@ -435,7 +435,7 @@ type InvoiceItem struct {
 }
 
 type PaymentIntent struct {
-	ID               uint32              `json:"id"`
+	ID               uint64              `json:"id"`
 	CustomerID       int32               `json:"customerId"`
 	Amount           int64               `json:"amount"`
 	Currency         Currency            `json:"currency"`
@@ -449,7 +449,7 @@ type PaymentIntent struct {
 }
 
 type PaymentMethod struct {
-	ID                  uint32             `json:"id"`
+	ID                  uint64             `json:"id"`
 	CustomerID          int32              `json:"customerId"`
 	Type                PaymentMethodType  `json:"type"`
 	CardLast4           *string            `json:"cardLast4"`
@@ -465,14 +465,14 @@ type PaymentMethod struct {
 }
 
 type Price struct {
-	ID                     uint32             `json:"id"`
-	ProductID              int32              `json:"productId"`
+	ID                     uint64             `json:"id"`
+	ProductID              uint64             `json:"productId"`
 	Type                   PriceType          `json:"type"`
 	Currency               Currency           `json:"currency"`
-	UnitAmount             pgtype.Numeric     `json:"unitAmount"`
+	UnitAmount             float64            `json:"unitAmount"`
 	RecurringInterval      NullIntervalType   `json:"recurringInterval"`
-	RecurringIntervalCount *int32             `json:"recurringIntervalCount"`
-	TrialPeriodDays        *int32             `json:"trialPeriodDays"`
+	RecurringIntervalCount int32              `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32              `json:"trialPeriodDays"`
 	Active                 bool               `json:"active"`
 	StripeID               string             `json:"stripeId"`
 	CreatedAt              pgtype.Timestamptz `json:"createdAt"`
@@ -480,7 +480,7 @@ type Price struct {
 }
 
 type Product struct {
-	ID          uint32             `json:"id"`
+	ID          uint64             `json:"id"`
 	Name        string             `json:"name"`
 	Description *string            `json:"description"`
 	Active      bool               `json:"active"`
@@ -491,7 +491,7 @@ type Product struct {
 }
 
 type Subscription struct {
-	ID                 uint32             `json:"id"`
+	ID                 uint64             `json:"id"`
 	CustomerID         int32              `json:"customerId"`
 	PriceID            int32              `json:"priceId"`
 	Status             SubscriptionStatus `json:"status"`

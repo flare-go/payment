@@ -77,7 +77,7 @@ FROM invoices
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetInvoice(ctx context.Context, id uint32) (*Invoice, error) {
+func (q *Queries) GetInvoice(ctx context.Context, id uint64) (*Invoice, error) {
 	row := q.db.QueryRow(ctx, getInvoice, id)
 	var i Invoice
 	err := row.Scan(
@@ -159,7 +159,7 @@ RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount
 `
 
 type UpdateInvoiceParams struct {
-	ID              uint32             `json:"id"`
+	ID              uint64             `json:"id"`
 	Status          InvoiceStatus      `json:"status"`
 	AmountPaid      int64              `json:"amountPaid"`
 	AmountRemaining int64              `json:"amountRemaining"`

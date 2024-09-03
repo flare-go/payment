@@ -1,6 +1,11 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"goflare.io/payment/sqlc"
+	"log"
+	"time"
+)
 
 // Product 代表可訂閱或購買的產品
 // Product represents a product that can be subscribed to or purchased
@@ -13,4 +18,48 @@ type Product struct {
 	Metadata    map[string]string `json:"metadata"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+}
+
+func NewProduct() *Product {
+	return &Product{}
+}
+
+func (p *Product) ConvertFromSQLCProduct(sqlcProduct any) *Product {
+
+	var (
+		id                   uint64
+		name, desc, stripeID string
+		active               bool
+		metadata             map[string]string
+		createdAt, updatedAt time.Time
+	)
+
+	switch sp := sqlcProduct.(type) {
+	case *sqlc.Product:
+		id = sp.ID
+		name = sp.Name
+		if sp.Description != nil {
+			desc = *sp.Description
+		}
+		stripeID = sp.StripeID
+		active = sp.Active
+		if err := json.Unmarshal(sp.Metadata, &metadata); err != nil {
+			log.Println("Error unmarshalling metadata:", err)
+		}
+		createdAt = sp.CreatedAt.Time
+		updatedAt = sp.UpdatedAt.Time
+	default:
+		return nil
+	}
+
+	p.ID = id
+	p.Name = name
+	p.Description = desc
+	p.StripeID = stripeID
+	p.Active = active
+	p.Metadata = metadata
+	p.CreatedAt = createdAt
+	p.UpdatedAt = updatedAt
+
+	return p
 }

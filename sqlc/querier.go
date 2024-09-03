@@ -9,28 +9,33 @@ import (
 )
 
 type Querier interface {
-	CancelSubscription(ctx context.Context, id uint32) (*Subscription, error)
-	CreateCustomer(ctx context.Context, arg CreateCustomerParams) (*Customer, error)
+	CancelSubscription(ctx context.Context, id uint64) (*Subscription, error)
+	CreateCustomer(ctx context.Context, arg CreateCustomerParams) error
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (*Invoice, error)
 	CreateInvoiceItem(ctx context.Context, arg CreateInvoiceItemParams) (*InvoiceItem, error)
 	CreatePaymentIntent(ctx context.Context, arg CreatePaymentIntentParams) (*PaymentIntent, error)
 	CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) (*PaymentMethod, error)
-	CreatePrice(ctx context.Context, arg CreatePriceParams) (*Price, error)
-	CreateProduct(ctx context.Context, arg CreateProductParams) (*Product, error)
+	CreatePrice(ctx context.Context, arg CreatePriceParams) error
+	CreateProduct(ctx context.Context, arg CreateProductParams) error
 	CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (*Subscription, error)
-	DeleteCustomer(ctx context.Context, id uint32) error
-	DeleteInvoiceItem(ctx context.Context, id uint32) error
-	DeletePaymentMethod(ctx context.Context, id uint32) error
-	DeletePrice(ctx context.Context, id uint32) error
-	DeleteProduct(ctx context.Context, id uint32) error
-	GetCustomer(ctx context.Context, id uint32) (*Customer, error)
-	GetInvoice(ctx context.Context, id uint32) (*Invoice, error)
-	GetInvoiceItem(ctx context.Context, id uint32) (*InvoiceItem, error)
-	GetPaymentIntent(ctx context.Context, id uint32) (*PaymentIntent, error)
-	GetPaymentMethod(ctx context.Context, id uint32) (*PaymentMethod, error)
-	GetPrice(ctx context.Context, id uint32) (*Price, error)
-	GetProduct(ctx context.Context, id uint32) (*Product, error)
-	GetSubscription(ctx context.Context, id uint32) (*Subscription, error)
+	DeleteCustomer(ctx context.Context, id uint64) error
+	DeleteInvoiceItem(ctx context.Context, id uint64) error
+	DeletePaymentMethod(ctx context.Context, id uint64) error
+	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
+	DeletePrice(ctx context.Context, id uint64) error
+	// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+	DeleteProduct(ctx context.Context, id uint64) error
+	// RETURNING id, user_id, balance, stripe_id, created_at, updated_at;
+	GetCustomer(ctx context.Context, id uint64) (*Customer, error)
+	GetInvoice(ctx context.Context, id uint64) (*Invoice, error)
+	GetInvoiceItem(ctx context.Context, id uint64) (*InvoiceItem, error)
+	GetPaymentIntent(ctx context.Context, id uint64) (*PaymentIntent, error)
+	GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMethod, error)
+	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
+	GetPrice(ctx context.Context, id uint64) (*Price, error)
+	// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+	GetProduct(ctx context.Context, id uint64) (*Product, error)
+	GetSubscription(ctx context.Context, id uint64) (*Subscription, error)
 	ListCustomers(ctx context.Context, arg ListCustomersParams) ([]*Customer, error)
 	ListInvoiceItems(ctx context.Context, invoiceID int32) ([]*InvoiceItem, error)
 	ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]*Invoice, error)
@@ -39,14 +44,14 @@ type Querier interface {
 	ListPrices(ctx context.Context, arg ListPricesParams) ([]*Price, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]*Product, error)
 	ListSubscriptions(ctx context.Context, arg ListSubscriptionsParams) ([]*Subscription, error)
-	UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) (*Customer, error)
-	UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerBalanceParams) (*Customer, error)
+	UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) error
+	UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerBalanceParams) error
 	UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (*Invoice, error)
 	UpdateInvoiceItem(ctx context.Context, arg UpdateInvoiceItemParams) (*InvoiceItem, error)
 	UpdatePaymentIntent(ctx context.Context, arg UpdatePaymentIntentParams) (*PaymentIntent, error)
 	UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMethodParams) (*PaymentMethod, error)
-	UpdatePrice(ctx context.Context, arg UpdatePriceParams) (*Price, error)
-	UpdateProduct(ctx context.Context, arg UpdateProductParams) (*Product, error)
+	UpdatePrice(ctx context.Context, arg UpdatePriceParams) error
+	UpdateProduct(ctx context.Context, arg UpdateProductParams) error
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (*Subscription, error)
 }
 

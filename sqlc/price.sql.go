@@ -7,11 +7,9 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createPrice = `-- name: CreatePrice :one
+const createPrice = `-- name: CreatePrice :exec
 INSERT INTO prices (
     product_id,
     type,
@@ -25,23 +23,22 @@ INSERT INTO prices (
 ) VALUES (
              $1, $2, $3, $4, $5, $6, $7, $8, $9
          )
-RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at
 `
 
 type CreatePriceParams struct {
-	ProductID              int32            `json:"productId"`
+	ProductID              uint64           `json:"productId"`
 	Type                   PriceType        `json:"type"`
 	Currency               Currency         `json:"currency"`
-	UnitAmount             pgtype.Numeric   `json:"unitAmount"`
+	UnitAmount             float64          `json:"unitAmount"`
 	RecurringInterval      NullIntervalType `json:"recurringInterval"`
-	RecurringIntervalCount *int32           `json:"recurringIntervalCount"`
-	TrialPeriodDays        *int32           `json:"trialPeriodDays"`
+	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32            `json:"trialPeriodDays"`
 	Active                 bool             `json:"active"`
 	StripeID               string           `json:"stripeId"`
 }
 
-func (q *Queries) CreatePrice(ctx context.Context, arg CreatePriceParams) (*Price, error) {
-	row := q.db.QueryRow(ctx, createPrice,
+func (q *Queries) CreatePrice(ctx context.Context, arg CreatePriceParams) error {
+	_, err := q.db.Exec(ctx, createPrice,
 		arg.ProductID,
 		arg.Type,
 		arg.Currency,
@@ -52,40 +49,29 @@ func (q *Queries) CreatePrice(ctx context.Context, arg CreatePriceParams) (*Pric
 		arg.Active,
 		arg.StripeID,
 	)
-	var i Price
-	err := row.Scan(
-		&i.ID,
-		&i.ProductID,
-		&i.Type,
-		&i.Currency,
-		&i.UnitAmount,
-		&i.RecurringInterval,
-		&i.RecurringIntervalCount,
-		&i.TrialPeriodDays,
-		&i.Active,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }
 
 const deletePrice = `-- name: DeletePrice :exec
+
 DELETE FROM prices WHERE id = $1
 `
 
-func (q *Queries) DeletePrice(ctx context.Context, id uint32) error {
+// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
+func (q *Queries) DeletePrice(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deletePrice, id)
 	return err
 }
 
 const getPrice = `-- name: GetPrice :one
+
 SELECT id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at
 FROM prices
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetPrice(ctx context.Context, id uint32) (*Price, error) {
+// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
+func (q *Queries) GetPrice(ctx context.Context, id uint64) (*Price, error) {
 	row := q.db.QueryRow(ctx, getPrice, id)
 	var i Price
 	err := row.Scan(
@@ -114,10 +100,10 @@ LIMIT $3 OFFSET $4
 `
 
 type ListPricesParams struct {
-	ProductID int32 `json:"productId"`
-	Active    bool  `json:"active"`
-	Limit     int64 `json:"limit"`
-	Offset    int64 `json:"offset"`
+	ProductID uint64 `json:"productId"`
+	Active    bool   `json:"active"`
+	Limit     int64  `json:"limit"`
+	Offset    int64  `json:"offset"`
 }
 
 func (q *Queries) ListPrices(ctx context.Context, arg ListPricesParams) ([]*Price, error) {
@@ -158,7 +144,7 @@ func (q *Queries) ListPrices(ctx context.Context, arg ListPricesParams) ([]*Pric
 	return items, nil
 }
 
-const updatePrice = `-- name: UpdatePrice :one
+const updatePrice = `-- name: UpdatePrice :exec
 UPDATE prices
 SET product_id = $2,
     type = $3,
@@ -171,24 +157,23 @@ SET product_id = $2,
     stripe_id = $10,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at
 `
 
 type UpdatePriceParams struct {
-	ID                     uint32           `json:"id"`
-	ProductID              int32            `json:"productId"`
+	ID                     uint64           `json:"id"`
+	ProductID              uint64           `json:"productId"`
 	Type                   PriceType        `json:"type"`
 	Currency               Currency         `json:"currency"`
-	UnitAmount             pgtype.Numeric   `json:"unitAmount"`
+	UnitAmount             float64          `json:"unitAmount"`
 	RecurringInterval      NullIntervalType `json:"recurringInterval"`
-	RecurringIntervalCount *int32           `json:"recurringIntervalCount"`
-	TrialPeriodDays        *int32           `json:"trialPeriodDays"`
+	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32            `json:"trialPeriodDays"`
 	Active                 bool             `json:"active"`
 	StripeID               string           `json:"stripeId"`
 }
 
-func (q *Queries) UpdatePrice(ctx context.Context, arg UpdatePriceParams) (*Price, error) {
-	row := q.db.QueryRow(ctx, updatePrice,
+func (q *Queries) UpdatePrice(ctx context.Context, arg UpdatePriceParams) error {
+	_, err := q.db.Exec(ctx, updatePrice,
 		arg.ID,
 		arg.ProductID,
 		arg.Type,
@@ -200,20 +185,5 @@ func (q *Queries) UpdatePrice(ctx context.Context, arg UpdatePriceParams) (*Pric
 		arg.Active,
 		arg.StripeID,
 	)
-	var i Price
-	err := row.Scan(
-		&i.ID,
-		&i.ProductID,
-		&i.Type,
-		&i.Currency,
-		&i.UnitAmount,
-		&i.RecurringInterval,
-		&i.RecurringIntervalCount,
-		&i.TrialPeriodDays,
-		&i.Active,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }

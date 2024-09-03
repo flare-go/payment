@@ -1,4 +1,4 @@
--- name: CreateProduct :one
+-- name: CreateProduct :exec
 INSERT INTO products (
     name,
     description,
@@ -7,15 +7,15 @@ INSERT INTO products (
     stripe_id
 ) VALUES (
              $1, $2, $3, $4, $5
-         )
-RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+         );
+-- RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
 
 -- name: GetProduct :one
 SELECT id, name, description, active, metadata, stripe_id, created_at, updated_at
 FROM products
 WHERE id = $1 LIMIT 1;
 
--- name: UpdateProduct :one
+-- name: UpdateProduct :exec
 UPDATE products
 SET name = $2,
     description = $3,
@@ -23,8 +23,8 @@ SET name = $2,
     metadata = $5,
     stripe_id = $6,
     updated_at = NOW()
-WHERE id = $1
-RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+WHERE id = $1;
+-- RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
 
 -- name: DeleteProduct :exec
 DELETE FROM products WHERE id = $1;

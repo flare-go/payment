@@ -70,7 +70,7 @@ FROM payment_intents
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetPaymentIntent(ctx context.Context, id uint32) (*PaymentIntent, error) {
+func (q *Queries) GetPaymentIntent(ctx context.Context, id uint64) (*PaymentIntent, error) {
 	row := q.db.QueryRow(ctx, getPaymentIntent, id)
 	var i PaymentIntent
 	err := row.Scan(
@@ -148,7 +148,7 @@ RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_fu
 `
 
 type UpdatePaymentIntentParams struct {
-	ID               uint32              `json:"id"`
+	ID               uint64              `json:"id"`
 	Status           PaymentIntentStatus `json:"status"`
 	PaymentMethodID  *int32              `json:"paymentMethodId"`
 	SetupFutureUsage *string             `json:"setupFutureUsage"`

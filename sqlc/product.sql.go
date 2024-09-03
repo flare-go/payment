@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-const createProduct = `-- name: CreateProduct :one
+const createProduct = `-- name: CreateProduct :exec
 INSERT INTO products (
     name,
     description,
@@ -19,7 +19,6 @@ INSERT INTO products (
 ) VALUES (
              $1, $2, $3, $4, $5
          )
-RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at
 `
 
 type CreateProductParams struct {
@@ -30,44 +29,37 @@ type CreateProductParams struct {
 	StripeID    string  `json:"stripeId"`
 }
 
-func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (*Product, error) {
-	row := q.db.QueryRow(ctx, createProduct,
+func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) error {
+	_, err := q.db.Exec(ctx, createProduct,
 		arg.Name,
 		arg.Description,
 		arg.Active,
 		arg.Metadata,
 		arg.StripeID,
 	)
-	var i Product
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.Active,
-		&i.Metadata,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }
 
 const deleteProduct = `-- name: DeleteProduct :exec
+
 DELETE FROM products WHERE id = $1
 `
 
-func (q *Queries) DeleteProduct(ctx context.Context, id uint32) error {
+// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+func (q *Queries) DeleteProduct(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deleteProduct, id)
 	return err
 }
 
 const getProduct = `-- name: GetProduct :one
+
 SELECT id, name, description, active, metadata, stripe_id, created_at, updated_at
 FROM products
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetProduct(ctx context.Context, id uint32) (*Product, error) {
+// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+func (q *Queries) GetProduct(ctx context.Context, id uint64) (*Product, error) {
 	row := q.db.QueryRow(ctx, getProduct, id)
 	var i Product
 	err := row.Scan(
@@ -126,7 +118,7 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]*
 	return items, nil
 }
 
-const updateProduct = `-- name: UpdateProduct :one
+const updateProduct = `-- name: UpdateProduct :exec
 UPDATE products
 SET name = $2,
     description = $3,
@@ -135,11 +127,10 @@ SET name = $2,
     stripe_id = $6,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at
 `
 
 type UpdateProductParams struct {
-	ID          uint32  `json:"id"`
+	ID          uint64  `json:"id"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
 	Active      bool    `json:"active"`
@@ -147,8 +138,8 @@ type UpdateProductParams struct {
 	StripeID    string  `json:"stripeId"`
 }
 
-func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (*Product, error) {
-	row := q.db.QueryRow(ctx, updateProduct,
+func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
+	_, err := q.db.Exec(ctx, updateProduct,
 		arg.ID,
 		arg.Name,
 		arg.Description,
@@ -156,16 +147,5 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (*
 		arg.Metadata,
 		arg.StripeID,
 	)
-	var i Product
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Description,
-		&i.Active,
-		&i.Metadata,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }

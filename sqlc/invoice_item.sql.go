@@ -44,7 +44,7 @@ const deleteInvoiceItem = `-- name: DeleteInvoiceItem :exec
 DELETE FROM invoice_items WHERE id = $1
 `
 
-func (q *Queries) DeleteInvoiceItem(ctx context.Context, id uint32) error {
+func (q *Queries) DeleteInvoiceItem(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deleteInvoiceItem, id)
 	return err
 }
@@ -55,7 +55,7 @@ FROM invoice_items
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetInvoiceItem(ctx context.Context, id uint32) (*InvoiceItem, error) {
+func (q *Queries) GetInvoiceItem(ctx context.Context, id uint64) (*InvoiceItem, error) {
 	row := q.db.QueryRow(ctx, getInvoiceItem, id)
 	var i InvoiceItem
 	err := row.Scan(
@@ -113,7 +113,7 @@ RETURNING id, invoice_id, amount, description, created_at, updated_at
 `
 
 type UpdateInvoiceItemParams struct {
-	ID          uint32  `json:"id"`
+	ID          uint64  `json:"id"`
 	Amount      int64   `json:"amount"`
 	Description *string `json:"description"`
 }
