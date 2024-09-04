@@ -19,7 +19,7 @@
 
 1. **克隆代碼庫**：
     ```bash
-    git clone https://your-repo-url.git
+    git clone git@github.com:flare-go/payment.git
     cd payment
     ```
 
