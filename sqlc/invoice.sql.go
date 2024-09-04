@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createInvoice = `-- name: CreateInvoice :one
+const createInvoice = `-- name: CreateInvoice :exec
 INSERT INTO invoices (
     customer_id,
     subscription_id,
@@ -21,27 +21,28 @@ INSERT INTO invoices (
     amount_paid,
     amount_remaining,
     due_date,
+    paid_at,
     stripe_id
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9
+             $1, $2, $3, $4, $5, $6, $7, $8, $9,$10
          )
-RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
 `
 
 type CreateInvoiceParams struct {
-	CustomerID      int32              `json:"customerId"`
-	SubscriptionID  *int32             `json:"subscriptionId"`
+	CustomerID      uint64             `json:"customerId"`
+	SubscriptionID  uint64             `json:"subscriptionId"`
 	Status          InvoiceStatus      `json:"status"`
 	Currency        Currency           `json:"currency"`
-	AmountDue       int64              `json:"amountDue"`
-	AmountPaid      int64              `json:"amountPaid"`
-	AmountRemaining int64              `json:"amountRemaining"`
+	AmountDue       uint64             `json:"amountDue"`
+	AmountPaid      uint64             `json:"amountPaid"`
+	AmountRemaining uint64             `json:"amountRemaining"`
 	DueDate         pgtype.Timestamptz `json:"dueDate"`
+	PaidAt          pgtype.Timestamptz `json:"paidAt"`
 	StripeID        string             `json:"stripeId"`
 }
 
-func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (*Invoice, error) {
-	row := q.db.QueryRow(ctx, createInvoice,
+func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) error {
+	_, err := q.db.Exec(ctx, createInvoice,
 		arg.CustomerID,
 		arg.SubscriptionID,
 		arg.Status,
@@ -50,33 +51,29 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (*
 		arg.AmountPaid,
 		arg.AmountRemaining,
 		arg.DueDate,
+		arg.PaidAt,
 		arg.StripeID,
 	)
-	var i Invoice
-	err := row.Scan(
-		&i.ID,
-		&i.CustomerID,
-		&i.SubscriptionID,
-		&i.Status,
-		&i.Currency,
-		&i.AmountDue,
-		&i.AmountPaid,
-		&i.AmountRemaining,
-		&i.DueDate,
-		&i.PaidAt,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
+}
+
+const deleteInvoice = `-- name: DeleteInvoice :exec
+DELETE FROM invoices WHERE id = $1
+`
+
+func (q *Queries) DeleteInvoice(ctx context.Context, id uint64) error {
+	_, err := q.db.Exec(ctx, deleteInvoice, id)
+	return err
 }
 
 const getInvoice = `-- name: GetInvoice :one
+
 SELECT id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
 FROM invoices
 WHERE id = $1 LIMIT 1
 `
 
+// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
 func (q *Queries) GetInvoice(ctx context.Context, id uint64) (*Invoice, error) {
 	row := q.db.QueryRow(ctx, getInvoice, id)
 	var i Invoice
@@ -99,6 +96,7 @@ func (q *Queries) GetInvoice(ctx context.Context, id uint64) (*Invoice, error) {
 }
 
 const listInvoices = `-- name: ListInvoices :many
+
 SELECT id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
 FROM invoices
 WHERE customer_id = $1
@@ -107,11 +105,12 @@ LIMIT $2 OFFSET $3
 `
 
 type ListInvoicesParams struct {
-	CustomerID int32 `json:"customerId"`
-	Limit      int64 `json:"limit"`
-	Offset     int64 `json:"offset"`
+	CustomerID uint64 `json:"customerId"`
+	Limit      int64  `json:"limit"`
+	Offset     int64  `json:"offset"`
 }
 
+// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
 func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]*Invoice, error) {
 	rows, err := q.db.Query(ctx, listInvoices, arg.CustomerID, arg.Limit, arg.Offset)
 	if err != nil {
@@ -146,7 +145,47 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]*
 	return items, nil
 }
 
-const updateInvoice = `-- name: UpdateInvoice :one
+const listInvoicesByStripeID = `-- name: ListInvoicesByStripeID :many
+SELECT id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
+FROM invoices
+WHERE stripe_id = $1
+`
+
+func (q *Queries) ListInvoicesByStripeID(ctx context.Context, stripeID string) ([]*Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesByStripeID, stripeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.CustomerID,
+			&i.SubscriptionID,
+			&i.Status,
+			&i.Currency,
+			&i.AmountDue,
+			&i.AmountPaid,
+			&i.AmountRemaining,
+			&i.DueDate,
+			&i.PaidAt,
+			&i.StripeID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateInvoice = `-- name: UpdateInvoice :exec
 UPDATE invoices
 SET status = $2,
     amount_paid = $3,
@@ -155,20 +194,19 @@ SET status = $2,
     stripe_id = $6,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
 `
 
 type UpdateInvoiceParams struct {
 	ID              uint64             `json:"id"`
 	Status          InvoiceStatus      `json:"status"`
-	AmountPaid      int64              `json:"amountPaid"`
-	AmountRemaining int64              `json:"amountRemaining"`
+	AmountPaid      uint64             `json:"amountPaid"`
+	AmountRemaining uint64             `json:"amountRemaining"`
 	PaidAt          pgtype.Timestamptz `json:"paidAt"`
 	StripeID        string             `json:"stripeId"`
 }
 
-func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (*Invoice, error) {
-	row := q.db.QueryRow(ctx, updateInvoice,
+func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) error {
+	_, err := q.db.Exec(ctx, updateInvoice,
 		arg.ID,
 		arg.Status,
 		arg.AmountPaid,
@@ -176,21 +214,5 @@ func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (*
 		arg.PaidAt,
 		arg.StripeID,
 	)
-	var i Invoice
-	err := row.Scan(
-		&i.ID,
-		&i.CustomerID,
-		&i.SubscriptionID,
-		&i.Status,
-		&i.Currency,
-		&i.AmountDue,
-		&i.AmountPaid,
-		&i.AmountRemaining,
-		&i.DueDate,
-		&i.PaidAt,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }

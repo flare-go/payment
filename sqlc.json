@@ -41,6 +41,42 @@
           {
             "column": "*.unit_amount",
             "go_type": "float64"
+          },
+          {
+            "column": "*.customer_id",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.subscription_id",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.invoice_id",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.payment_method_id",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.amount",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.price_id",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.amount_due",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.amount_remaining",
+            "go_type": "uint64"
+          },
+          {
+            "column": "*.amount_paid",
+            "go_type": "uint64"
           }
         ]
       }

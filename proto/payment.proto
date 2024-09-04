@@ -1,0 +1,357 @@
+syntax = "proto3";
+
+package payment;
+
+option go_package = "goflare.io/payment/proto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+service PaymentService {
+  // Customer operations
+  rpc CreateCustomer(CreateCustomerRequest) returns (Customer);
+  rpc GetCustomer(GetCustomerRequest) returns (Customer);
+  rpc UpdateCustomer(UpdateCustomerRequest) returns (Customer);
+
+  // Product operations
+  rpc CreateProduct(CreateProductRequest) returns (Product);
+  rpc GetProduct(GetProductRequest) returns (Product);
+  rpc UpdateProduct(UpdateProductRequest) returns (Product);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+
+  // Price operations
+  rpc CreatePrice(CreatePriceRequest) returns (Price);
+  rpc GetPrice(GetPriceRequest) returns (Price);
+  rpc UpdatePrice(UpdatePriceRequest) returns (Price);
+  rpc ListPrices(ListPricesRequest) returns (ListPricesResponse);
+
+  // Subscription operations
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (Subscription);
+  rpc GetSubscription(GetSubscriptionRequest) returns (Subscription);
+  rpc UpdateSubscription(UpdateSubscriptionRequest) returns (Subscription);
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (Subscription);
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse);
+
+  // Payment Intent operations
+  rpc CreatePaymentIntent(CreatePaymentIntentRequest) returns (PaymentIntent);
+  rpc GetPaymentIntent(GetPaymentIntentRequest) returns (PaymentIntent);
+  rpc ConfirmPaymentIntent(ConfirmPaymentIntentRequest) returns (PaymentIntent);
+  rpc CancelPaymentIntent(CancelPaymentIntentRequest) returns (PaymentIntent);
+
+  // Refund operations
+  rpc CreateRefund(CreateRefundRequest) returns (Refund);
+  rpc GetRefund(GetRefundRequest) returns (Refund);
+
+  // Invoice operations
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+  rpc PayInvoice(PayInvoiceRequest) returns (Invoice);
+
+  // Payment Method operations
+  rpc CreatePaymentMethod(CreatePaymentMethodRequest) returns (PaymentMethod);
+  rpc GetPaymentMethod(GetPaymentMethodRequest) returns (PaymentMethod);
+  rpc UpdatePaymentMethod(UpdatePaymentMethodRequest) returns (PaymentMethod);
+  rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (google.protobuf.Empty);
+  rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
+
+  // Webhook handling
+  rpc HandleWebhook(HandleWebhookRequest) returns (google.protobuf.Empty);
+}
+
+// Customer messages
+message Customer {
+  uint64 id = 1;
+  uint64 user_id = 2;
+  string email = 3;
+  string name = 4;
+  string stripe_id = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message CreateCustomerRequest {
+  uint64 user_id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+message GetCustomerRequest {
+  uint64 id = 1;
+}
+
+message UpdateCustomerRequest {
+  uint64 id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+// Product messages
+message Product {
+  uint64 id = 1;
+  string name = 2;
+  string description = 3;
+  bool active = 4;
+  map<string, string> metadata = 5;
+  string stripe_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message CreateProductRequest {
+  string name = 1;
+  string description = 2;
+  bool active = 3;
+}
+
+message GetProductRequest {
+  uint64 id = 1;
+}
+
+message UpdateProductRequest {
+  uint64 id = 1;
+  string name = 2;
+  string description = 3;
+  bool active = 4;
+}
+
+message ListProductsRequest {
+  bool active_only = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+}
+
+// Price messages
+message Price {
+  uint64 id = 1;
+  uint64 product_id = 2;
+  string type = 3;
+  string currency = 4;
+  int64 unit_amount = 5;
+  string recurring_interval = 6;
+  int32 recurring_interval_count = 7;
+  int32 trial_period_days = 8;
+  bool active = 9;
+  string stripe_id = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message CreatePriceRequest {
+  uint64 product_id = 1;
+  string type = 2;
+  string currency = 3;
+  int64 unit_amount = 4;
+  string recurring_interval = 5;
+  int32 recurring_interval_count = 6;
+  int32 trial_period_days = 7;
+}
+
+message GetPriceRequest {
+  uint64 id = 1;
+}
+
+message UpdatePriceRequest {
+  uint64 id = 1;
+  bool active = 2;
+}
+
+message ListPricesRequest {
+  uint64 product_id = 1;
+  bool active_only = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListPricesResponse {
+  repeated Price prices = 1;
+}
+
+// Subscription messages
+message Subscription {
+  uint64 id = 1;
+  uint64 customer_id = 2;
+  uint64 price_id = 3;
+  string status = 4;
+  google.protobuf.Timestamp current_period_start = 5;
+  google.protobuf.Timestamp current_period_end = 6;
+  google.protobuf.Timestamp canceled_at = 7;
+  bool cancel_at_period_end = 8;
+  google.protobuf.Timestamp trial_start = 9;
+  google.protobuf.Timestamp trial_end = 10;
+  string stripe_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message CreateSubscriptionRequest {
+  uint64 customer_id = 1;
+  uint64 price_id = 2;
+}
+
+message GetSubscriptionRequest {
+  uint64 id = 1;
+}
+
+message UpdateSubscriptionRequest {
+  uint64 id = 1;
+  uint64 price_id = 2;
+}
+
+message CancelSubscriptionRequest {
+  uint64 id = 1;
+  bool cancel_at_period_end = 2;
+}
+
+message ListSubscriptionsRequest {
+  uint64 customer_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+}
+
+// PaymentIntent messages
+message PaymentIntent {
+  uint64 id = 1;
+  uint64 customer_id = 2;
+  int64 amount = 3;
+  string currency = 4;
+  string status = 5;
+  uint64 payment_method_id = 6;
+  string setup_future_usage = 7;
+  string stripe_id = 8;
+  string client_secret = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message CreatePaymentIntentRequest {
+  uint64 customer_id = 1;
+  int64 amount = 2;
+  string currency = 3;
+}
+
+message GetPaymentIntentRequest {
+  uint64 id = 1;
+}
+
+message ConfirmPaymentIntentRequest {
+  uint64 id = 1;
+  uint64 payment_method_id = 2;
+}
+
+message CancelPaymentIntentRequest {
+  uint64 id = 1;
+}
+
+// Refund messages
+message Refund {
+  uint64 id = 1;
+  uint64 payment_intent_id = 2;
+  int64 amount = 3;
+  string status = 4;
+  string stripe_id = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message CreateRefundRequest {
+  uint64 payment_intent_id = 1;
+  int64 amount = 2;
+}
+
+message GetRefundRequest {
+  uint64 id = 1;
+}
+
+// Invoice messages
+message Invoice {
+  uint64 id = 1;
+  uint64 customer_id = 2;
+  uint64 subscription_id = 3;
+  string status = 4;
+  string currency = 5;
+  int64 amount_due = 6;
+  int64 amount_paid = 7;
+  int64 amount_remaining = 8;
+  google.protobuf.Timestamp due_date = 9;
+  google.protobuf.Timestamp paid_at = 10;
+  string stripe_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message GetInvoiceRequest {
+  uint64 id = 1;
+}
+
+message ListInvoicesRequest {
+  uint64 customer_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+
+message PayInvoiceRequest {
+  uint64 id = 1;
+}
+
+// PaymentMethod messages
+message PaymentMethod {
+  uint64 id = 1;
+  uint64 customer_id = 2;
+  string type = 3;
+  string card_last4 = 4;
+  string card_brand = 5;
+  int32 card_exp_month = 6;
+  int32 card_exp_year = 7;
+  string bank_account_last4 = 8;
+  string bank_account_bank_name = 9;
+  bool is_default = 10;
+  string stripe_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message CreatePaymentMethodRequest {
+  uint64 customer_id = 1;
+  string type = 2;
+  string token = 3;
+}
+
+message GetPaymentMethodRequest {
+  uint64 id = 1;
+}
+
+message UpdatePaymentMethodRequest {
+  uint64 id = 1;
+  bool is_default = 2;
+}
+
+message DeletePaymentMethodRequest {
+  uint64 id = 1;
+}
+
+message ListPaymentMethodsRequest {
+  uint64 customer_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListPaymentMethodsResponse {
+  repeated PaymentMethod payment_methods = 1;
+}
+
+// Webhook handling
+message HandleWebhookRequest {
+  bytes payload = 1;
+  string signature = 2;
+}

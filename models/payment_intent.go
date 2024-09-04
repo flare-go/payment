@@ -2,6 +2,7 @@ package models
 
 import (
 	"goflare.io/payment/models/enum"
+	"goflare.io/payment/sqlc"
 	"time"
 )
 
@@ -19,4 +20,50 @@ type PaymentIntent struct {
 	ClientSecret     string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+func NewPaymentIntent() *PaymentIntent {
+	return &PaymentIntent{}
+}
+
+func (pi *PaymentIntent) ConvertFromSQLCPaymentIntent(sqlcPaymentIntent any) *PaymentIntent {
+
+	var id, customerID, amount uint64
+	var currency enum.Currency
+	var status enum.PaymentIntentStatus
+	var paymentMethodID *uint64
+	var setupFutureUsage *string
+	var stripeID, clientSecret string
+	var createdAt, updatedAt time.Time
+
+	switch sp := sqlcPaymentIntent.(type) {
+	case *sqlc.PaymentIntent:
+		id = sp.ID
+		customerID = sp.CustomerID
+		amount = sp.Amount
+		currency = enum.Currency(sp.Currency)
+		status = enum.PaymentIntentStatus(sp.Status)
+		paymentMethodID = &sp.PaymentMethodID
+		setupFutureUsage = &sp.SetupFutureUsage
+		stripeID = sp.StripeID
+		clientSecret = sp.ClientSecret
+		createdAt = sp.CreatedAt.Time
+		updatedAt = sp.UpdatedAt.Time
+	default:
+		return nil
+	}
+
+	pi.ID = id
+	pi.CustomerID = customerID
+	pi.Amount = amount
+	pi.Currency = currency
+	pi.Status = status
+	pi.PaymentMethodID = paymentMethodID
+	pi.SetupFutureUsage = setupFutureUsage
+	pi.StripeID = stripeID
+	pi.ClientSecret = clientSecret
+	pi.CreatedAt = createdAt
+	pi.UpdatedAt = updatedAt
+
+	return pi
 }

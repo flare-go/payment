@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-const createInvoiceItem = `-- name: CreateInvoiceItem :one
+const createInvoiceItem = `-- name: CreateInvoiceItem :exec
 INSERT INTO invoice_items (
     invoice_id,
     amount,
@@ -17,44 +17,38 @@ INSERT INTO invoice_items (
 ) VALUES (
              $1, $2, $3
          )
-RETURNING id, invoice_id, amount, description, created_at, updated_at
 `
 
 type CreateInvoiceItemParams struct {
-	InvoiceID   int32   `json:"invoiceId"`
-	Amount      int64   `json:"amount"`
+	InvoiceID   uint64  `json:"invoiceId"`
+	Amount      uint64  `json:"amount"`
 	Description *string `json:"description"`
 }
 
-func (q *Queries) CreateInvoiceItem(ctx context.Context, arg CreateInvoiceItemParams) (*InvoiceItem, error) {
-	row := q.db.QueryRow(ctx, createInvoiceItem, arg.InvoiceID, arg.Amount, arg.Description)
-	var i InvoiceItem
-	err := row.Scan(
-		&i.ID,
-		&i.InvoiceID,
-		&i.Amount,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+func (q *Queries) CreateInvoiceItem(ctx context.Context, arg CreateInvoiceItemParams) error {
+	_, err := q.db.Exec(ctx, createInvoiceItem, arg.InvoiceID, arg.Amount, arg.Description)
+	return err
 }
 
 const deleteInvoiceItem = `-- name: DeleteInvoiceItem :exec
+
 DELETE FROM invoice_items WHERE id = $1
 `
 
+// RETURNING id, invoice_id, amount, description, created_at, updated_at;
 func (q *Queries) DeleteInvoiceItem(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deleteInvoiceItem, id)
 	return err
 }
 
 const getInvoiceItem = `-- name: GetInvoiceItem :one
+
 SELECT id, invoice_id, amount, description, created_at, updated_at
 FROM invoice_items
 WHERE id = $1 LIMIT 1
 `
 
+// RETURNING id, invoice_id, amount, description, created_at, updated_at;
 func (q *Queries) GetInvoiceItem(ctx context.Context, id uint64) (*InvoiceItem, error) {
 	row := q.db.QueryRow(ctx, getInvoiceItem, id)
 	var i InvoiceItem
@@ -76,7 +70,7 @@ WHERE invoice_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListInvoiceItems(ctx context.Context, invoiceID int32) ([]*InvoiceItem, error) {
+func (q *Queries) ListInvoiceItems(ctx context.Context, invoiceID uint64) ([]*InvoiceItem, error) {
 	rows, err := q.db.Query(ctx, listInvoiceItems, invoiceID)
 	if err != nil {
 		return nil, err
@@ -103,31 +97,21 @@ func (q *Queries) ListInvoiceItems(ctx context.Context, invoiceID int32) ([]*Inv
 	return items, nil
 }
 
-const updateInvoiceItem = `-- name: UpdateInvoiceItem :one
+const updateInvoiceItem = `-- name: UpdateInvoiceItem :exec
 UPDATE invoice_items
 SET amount = $2,
     description = $3,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, invoice_id, amount, description, created_at, updated_at
 `
 
 type UpdateInvoiceItemParams struct {
 	ID          uint64  `json:"id"`
-	Amount      int64   `json:"amount"`
+	Amount      uint64  `json:"amount"`
 	Description *string `json:"description"`
 }
 
-func (q *Queries) UpdateInvoiceItem(ctx context.Context, arg UpdateInvoiceItemParams) (*InvoiceItem, error) {
-	row := q.db.QueryRow(ctx, updateInvoiceItem, arg.ID, arg.Amount, arg.Description)
-	var i InvoiceItem
-	err := row.Scan(
-		&i.ID,
-		&i.InvoiceID,
-		&i.Amount,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+func (q *Queries) UpdateInvoiceItem(ctx context.Context, arg UpdateInvoiceItemParams) error {
+	_, err := q.db.Exec(ctx, updateInvoiceItem, arg.ID, arg.Amount, arg.Description)
+	return err
 }

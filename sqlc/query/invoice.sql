@@ -1,4 +1,4 @@
--- name: CreateInvoice :one
+-- name: CreateInvoice :exec
 INSERT INTO invoices (
     customer_id,
     subscription_id,
@@ -8,18 +8,19 @@ INSERT INTO invoices (
     amount_paid,
     amount_remaining,
     due_date,
+    paid_at,
     stripe_id
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9
-         )
-RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
+             $1, $2, $3, $4, $5, $6, $7, $8, $9,$10
+         );
+-- RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
 
 -- name: GetInvoice :one
 SELECT id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
 FROM invoices
 WHERE id = $1 LIMIT 1;
 
--- name: UpdateInvoice :one
+-- name: UpdateInvoice :exec
 UPDATE invoices
 SET status = $2,
     amount_paid = $3,
@@ -27,8 +28,8 @@ SET status = $2,
     paid_at = $5,
     stripe_id = $6,
     updated_at = NOW()
-WHERE id = $1
-RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
+WHERE id = $1;
+-- RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
 
 -- name: ListInvoices :many
 SELECT id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
@@ -36,3 +37,11 @@ FROM invoices
 WHERE customer_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
+
+-- name: ListInvoicesByStripeID :many
+SELECT id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at
+FROM invoices
+WHERE stripe_id = $1;
+
+-- name: DeleteInvoice :exec
+DELETE FROM invoices WHERE id = $1;

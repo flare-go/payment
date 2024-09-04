@@ -2,7 +2,7 @@ CREATE TYPE price_type AS ENUM ('ONE_TIME', 'RECURRING');
 CREATE TYPE currency AS ENUM ('USD', 'EUR', 'JPY', 'TWD');
 CREATE TYPE interval_type AS ENUM ('DAY', 'WEEK', 'MONTH', 'YEAR');
 CREATE TYPE subscription_status AS ENUM ('ACTIVE', 'PAST_DUE', 'UNPAID', 'CANCELED', 'INCOMPLETE', 'INCOMPLETE_EXPIRED', 'TRIALING');
-CREATE TYPE invoice_status AS ENUM ('DRAFT', 'OPEN', 'PAID', 'UNCOLLECTIBLE', 'VOID');
+CREATE TYPE invoice_status AS ENUM ('DRAFT', 'OPEN', 'PAID', 'PARTIALLY_PAID', 'UNCOLLECTIBLE', 'VOID');
 CREATE TYPE payment_method_type AS ENUM ('CARD', 'BANK_ACCOUNT');
 CREATE TYPE payment_intent_status AS ENUM ('REQUIRES_PAYMENT_METHOD', 'REQUIRES_CONFIRMATION', 'REQUIRES_ACTION', 'PROCESSING', 'SUCCEEDED', 'CANCELED');
 
@@ -113,7 +113,7 @@ CREATE TABLE payment_intents (
                                  currency currency NOT NULL,
                                  status payment_intent_status NOT NULL,
                                  payment_method_id INTEGER REFERENCES payment_methods(id) ON DELETE SET NULL,
-                                 setup_future_usage VARCHAR(50),
+                                 setup_future_usage VARCHAR(50) NOT NULL,
                                  stripe_id VARCHAR(255) NOT NULL UNIQUE,
                                  client_secret VARCHAR(255) NOT NULL,
                                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),

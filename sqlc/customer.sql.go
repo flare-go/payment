@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createCustomer = `-- name: CreateCustomer :exec
@@ -41,15 +43,28 @@ func (q *Queries) DeleteCustomer(ctx context.Context, id uint64) error {
 
 const getCustomer = `-- name: GetCustomer :one
 
-SELECT id, user_id, balance, stripe_id, created_at, updated_at
-FROM customers
-WHERE id = $1 LIMIT 1
+SELECT c.id, c.user_id, c.balance, c.stripe_id, c.created_at, c.updated_at,
+       u.email, u.username as name
+FROM customers c
+         JOIN users u ON c.user_id = u.id
+WHERE c.id = $1
 `
 
+type GetCustomerRow struct {
+	ID        uint64             `json:"id"`
+	UserID    uint64             `json:"userId"`
+	Balance   int64              `json:"balance"`
+	StripeID  string             `json:"stripeId"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+	Email     string             `json:"email"`
+	Name      string             `json:"name"`
+}
+
 // RETURNING id, user_id, balance, stripe_id, created_at, updated_at;
-func (q *Queries) GetCustomer(ctx context.Context, id uint64) (*Customer, error) {
-	row := q.db.QueryRow(ctx, getCustomer, id)
-	var i Customer
+func (q *Queries) GetCustomer(ctx context.Context, dollar_1 *int32) (*GetCustomerRow, error) {
+	row := q.db.QueryRow(ctx, getCustomer, dollar_1)
+	var i GetCustomerRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -57,31 +72,46 @@ func (q *Queries) GetCustomer(ctx context.Context, id uint64) (*Customer, error)
 		&i.StripeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Email,
+		&i.Name,
 	)
 	return &i, err
 }
 
 const listCustomers = `-- name: ListCustomers :many
-SELECT id, user_id, balance, stripe_id, created_at, updated_at
-FROM customers
-ORDER BY created_at DESC
+SELECT c.id, c.user_id, c.balance, c.stripe_id, c.created_at, c.updated_at,
+       u.email, u.username as name
+FROM customers c
+         JOIN users u ON c.user_id = u.id
+ORDER BY c.created_at DESC
 LIMIT $1 OFFSET $2
 `
 
 type ListCustomersParams struct {
-	Limit  int64 `json:"limit"`
-	Offset int64 `json:"offset"`
+	Column1 *int64 `json:"column1"`
+	Column2 *int64 `json:"column2"`
 }
 
-func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([]*Customer, error) {
-	rows, err := q.db.Query(ctx, listCustomers, arg.Limit, arg.Offset)
+type ListCustomersRow struct {
+	ID        uint64             `json:"id"`
+	UserID    uint64             `json:"userId"`
+	Balance   int64              `json:"balance"`
+	StripeID  string             `json:"stripeId"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+	Email     string             `json:"email"`
+	Name      string             `json:"name"`
+}
+
+func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([]*ListCustomersRow, error) {
+	rows, err := q.db.Query(ctx, listCustomers, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []*Customer{}
+	items := []*ListCustomersRow{}
 	for rows.Next() {
-		var i Customer
+		var i ListCustomersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -89,6 +119,8 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 			&i.StripeID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Email,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}

@@ -127,6 +127,7 @@ const (
 	InvoiceStatusDRAFT         InvoiceStatus = "DRAFT"
 	InvoiceStatusOPEN          InvoiceStatus = "OPEN"
 	InvoiceStatusPAID          InvoiceStatus = "PAID"
+	InvoiceStatusPARTIALLYPAID InvoiceStatus = "PARTIALLY_PAID"
 	InvoiceStatusUNCOLLECTIBLE InvoiceStatus = "UNCOLLECTIBLE"
 	InvoiceStatusVOID          InvoiceStatus = "VOID"
 )
@@ -171,6 +172,7 @@ func (e InvoiceStatus) Valid() bool {
 	case InvoiceStatusDRAFT,
 		InvoiceStatusOPEN,
 		InvoiceStatusPAID,
+		InvoiceStatusPARTIALLYPAID,
 		InvoiceStatusUNCOLLECTIBLE,
 		InvoiceStatusVOID:
 		return true
@@ -411,13 +413,13 @@ type Customer struct {
 
 type Invoice struct {
 	ID              uint64             `json:"id"`
-	CustomerID      int32              `json:"customerId"`
-	SubscriptionID  *int32             `json:"subscriptionId"`
+	CustomerID      uint64             `json:"customerId"`
+	SubscriptionID  uint64             `json:"subscriptionId"`
 	Status          InvoiceStatus      `json:"status"`
 	Currency        Currency           `json:"currency"`
-	AmountDue       int64              `json:"amountDue"`
-	AmountPaid      int64              `json:"amountPaid"`
-	AmountRemaining int64              `json:"amountRemaining"`
+	AmountDue       uint64             `json:"amountDue"`
+	AmountPaid      uint64             `json:"amountPaid"`
+	AmountRemaining uint64             `json:"amountRemaining"`
 	DueDate         pgtype.Timestamptz `json:"dueDate"`
 	PaidAt          pgtype.Timestamptz `json:"paidAt"`
 	StripeID        string             `json:"stripeId"`
@@ -427,8 +429,8 @@ type Invoice struct {
 
 type InvoiceItem struct {
 	ID          uint64             `json:"id"`
-	InvoiceID   int32              `json:"invoiceId"`
-	Amount      int64              `json:"amount"`
+	InvoiceID   uint64             `json:"invoiceId"`
+	Amount      uint64             `json:"amount"`
 	Description *string            `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
@@ -436,12 +438,12 @@ type InvoiceItem struct {
 
 type PaymentIntent struct {
 	ID               uint64              `json:"id"`
-	CustomerID       int32               `json:"customerId"`
-	Amount           int64               `json:"amount"`
+	CustomerID       uint64              `json:"customerId"`
+	Amount           uint64              `json:"amount"`
 	Currency         Currency            `json:"currency"`
 	Status           PaymentIntentStatus `json:"status"`
-	PaymentMethodID  *int32              `json:"paymentMethodId"`
-	SetupFutureUsage *string             `json:"setupFutureUsage"`
+	PaymentMethodID  uint64              `json:"paymentMethodId"`
+	SetupFutureUsage string              `json:"setupFutureUsage"`
 	StripeID         string              `json:"stripeId"`
 	ClientSecret     string              `json:"clientSecret"`
 	CreatedAt        pgtype.Timestamptz  `json:"createdAt"`
@@ -450,7 +452,7 @@ type PaymentIntent struct {
 
 type PaymentMethod struct {
 	ID                  uint64             `json:"id"`
-	CustomerID          int32              `json:"customerId"`
+	CustomerID          uint64             `json:"customerId"`
 	Type                PaymentMethodType  `json:"type"`
 	CardLast4           *string            `json:"cardLast4"`
 	CardBrand           *string            `json:"cardBrand"`
@@ -492,8 +494,8 @@ type Product struct {
 
 type Subscription struct {
 	ID                 uint64             `json:"id"`
-	CustomerID         int32              `json:"customerId"`
-	PriceID            int32              `json:"priceId"`
+	CustomerID         uint64             `json:"customerId"`
+	PriceID            uint64             `json:"priceId"`
 	Status             SubscriptionStatus `json:"status"`
 	CurrentPeriodStart pgtype.Timestamptz `json:"currentPeriodStart"`
 	CurrentPeriodEnd   pgtype.Timestamptz `json:"currentPeriodEnd"`

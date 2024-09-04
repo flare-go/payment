@@ -21,7 +21,7 @@ type Payment interface {
 	DeleteProduct(ctx context.Context, productID uint64) error                           // Interacts with Stripe
 	ListProducts(ctx context.Context, active bool) ([]*models.Product, error)
 
-	CreatePrice(ctx context.Context, productID uint64, priceType enum.PriceType, currency enum.Currency, unitAmount int64, interval enum.Interval, intervalCount, trialPeriodDays int32) (*models.Price, error) // Interacts with Stripe
+	CreatePrice(ctx context.Context, productID uint64, priceType enum.PriceType, currency enum.Currency, unitAmount float64, interval enum.Interval, intervalCount, trialPeriodDays int32) (*models.Price, error) // Interacts with Stripe
 	GetPrice(ctx context.Context, priceID uint64) (*models.Price, error)
 	UpdatePrice(ctx context.Context, price *models.Price) (*models.Price, error) // Interacts with Stripe
 	DeletePrice(ctx context.Context, priceID uint64) error                       // Interacts with Stripe
@@ -38,13 +38,13 @@ type Payment interface {
 	PayInvoice(ctx context.Context, invoiceID uint64) (*models.Invoice, error) // Interacts with Stripe
 	ListInvoices(ctx context.Context, customerID uint64) ([]*models.Invoice, error)
 
-	CreatePaymentMethod(ctx context.Context, customerID uint64, paymentMethodType enum.PaymentMethodType, cardDetails *stripe.CardParams) (*models.PaymentMethod, error) // Interacts with Stripe
+	CreatePaymentMethod(ctx context.Context, customerID uint64, paymentMethodType enum.PaymentMethodType, cardDetails *stripe.PaymentMethodCardParams) (*models.PaymentMethod, error) // Interacts with Stripe
 	GetPaymentMethod(ctx context.Context, paymentMethodID uint64) (*models.PaymentMethod, error)
 	UpdatePaymentMethod(ctx context.Context, paymentMethod *models.PaymentMethod) (*models.PaymentMethod, error) // Interacts with Stripe
 	DeletePaymentMethod(ctx context.Context, paymentMethodID uint64) error                                       // Interacts with Stripe
 	ListPaymentMethods(ctx context.Context, customerID uint64) ([]*models.PaymentMethod, error)
 
-	CreatePaymentIntent(ctx context.Context, customerID uint64, amount int64, currency enum.Currency) (*models.PaymentIntent, error) // Interacts with Stripe
+	CreatePaymentIntent(ctx context.Context, customerID, amount uint64, currency enum.Currency) (*models.PaymentIntent, error) // Interacts with Stripe
 	GetPaymentIntent(ctx context.Context, paymentIntentID uint64) (*models.PaymentIntent, error)
 	ConfirmPaymentIntent(ctx context.Context, paymentIntentID, paymentMethodID uint64) (*models.PaymentIntent, error) // Interacts with Stripe
 	CancelPaymentIntent(ctx context.Context, paymentIntentID uint64) (*models.PaymentIntent, error)                   // Interacts with Stripe

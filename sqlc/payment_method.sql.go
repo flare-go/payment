@@ -7,9 +7,11 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createPaymentMethod = `-- name: CreatePaymentMethod :one
+const createPaymentMethod = `-- name: CreatePaymentMethod :exec
 INSERT INTO payment_methods (
     customer_id,
     type,
@@ -24,11 +26,10 @@ INSERT INTO payment_methods (
 ) VALUES (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
          )
-RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at
 `
 
 type CreatePaymentMethodParams struct {
-	CustomerID          int32             `json:"customerId"`
+	CustomerID          uint64            `json:"customerId"`
 	Type                PaymentMethodType `json:"type"`
 	CardLast4           *string           `json:"cardLast4"`
 	CardBrand           *string           `json:"cardBrand"`
@@ -40,8 +41,8 @@ type CreatePaymentMethodParams struct {
 	StripeID            string            `json:"stripeId"`
 }
 
-func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) (*PaymentMethod, error) {
-	row := q.db.QueryRow(ctx, createPaymentMethod,
+func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error {
+	_, err := q.db.Exec(ctx, createPaymentMethod,
 		arg.CustomerID,
 		arg.Type,
 		arg.CardLast4,
@@ -53,40 +54,28 @@ func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMeth
 		arg.IsDefault,
 		arg.StripeID,
 	)
-	var i PaymentMethod
-	err := row.Scan(
-		&i.ID,
-		&i.CustomerID,
-		&i.Type,
-		&i.CardLast4,
-		&i.CardBrand,
-		&i.CardExpMonth,
-		&i.CardExpYear,
-		&i.BankAccountLast4,
-		&i.BankAccountBankName,
-		&i.IsDefault,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }
 
 const deletePaymentMethod = `-- name: DeletePaymentMethod :exec
+
 DELETE FROM payment_methods WHERE id = $1
 `
 
+// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 func (q *Queries) DeletePaymentMethod(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deletePaymentMethod, id)
 	return err
 }
 
 const getPaymentMethod = `-- name: GetPaymentMethod :one
+
 SELECT id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at
 FROM payment_methods
 WHERE id = $1 LIMIT 1
 `
 
+// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 func (q *Queries) GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMethod, error) {
 	row := q.db.QueryRow(ctx, getPaymentMethod, id)
 	var i PaymentMethod
@@ -117,9 +106,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListPaymentMethodsParams struct {
-	CustomerID int32 `json:"customerId"`
-	Limit      int64 `json:"limit"`
-	Offset     int64 `json:"offset"`
+	CustomerID uint64 `json:"customerId"`
+	Limit      int64  `json:"limit"`
+	Offset     int64  `json:"offset"`
 }
 
 func (q *Queries) ListPaymentMethods(ctx context.Context, arg ListPaymentMethodsParams) ([]*PaymentMethod, error) {
@@ -156,9 +145,10 @@ func (q *Queries) ListPaymentMethods(ctx context.Context, arg ListPaymentMethods
 	return items, nil
 }
 
-const updatePaymentMethod = `-- name: UpdatePaymentMethod :one
+const updatePaymentMethod = `-- name: UpdatePaymentMethod :exec
 UPDATE payment_methods
-SET type = $2,
+SET
+    type = $2,
     card_last4 = $3,
     card_brand = $4,
     card_exp_month = $5,
@@ -168,25 +158,27 @@ SET type = $2,
     is_default = $9,
     stripe_id = $10,
     updated_at = NOW()
-WHERE id = $1
-RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at
+WHERE
+    id = $1
+  AND updated_at = $11
 `
 
 type UpdatePaymentMethodParams struct {
-	ID                  uint64            `json:"id"`
-	Type                PaymentMethodType `json:"type"`
-	CardLast4           *string           `json:"cardLast4"`
-	CardBrand           *string           `json:"cardBrand"`
-	CardExpMonth        *int32            `json:"cardExpMonth"`
-	CardExpYear         *int32            `json:"cardExpYear"`
-	BankAccountLast4    *string           `json:"bankAccountLast4"`
-	BankAccountBankName *string           `json:"bankAccountBankName"`
-	IsDefault           bool              `json:"isDefault"`
-	StripeID            string            `json:"stripeId"`
+	ID                  uint64             `json:"id"`
+	Type                PaymentMethodType  `json:"type"`
+	CardLast4           *string            `json:"cardLast4"`
+	CardBrand           *string            `json:"cardBrand"`
+	CardExpMonth        *int32             `json:"cardExpMonth"`
+	CardExpYear         *int32             `json:"cardExpYear"`
+	BankAccountLast4    *string            `json:"bankAccountLast4"`
+	BankAccountBankName *string            `json:"bankAccountBankName"`
+	IsDefault           bool               `json:"isDefault"`
+	StripeID            string             `json:"stripeId"`
+	UpdatedAt           pgtype.Timestamptz `json:"updatedAt"`
 }
 
-func (q *Queries) UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMethodParams) (*PaymentMethod, error) {
-	row := q.db.QueryRow(ctx, updatePaymentMethod,
+func (q *Queries) UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMethodParams) error {
+	_, err := q.db.Exec(ctx, updatePaymentMethod,
 		arg.ID,
 		arg.Type,
 		arg.CardLast4,
@@ -197,22 +189,7 @@ func (q *Queries) UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMeth
 		arg.BankAccountBankName,
 		arg.IsDefault,
 		arg.StripeID,
+		arg.UpdatedAt,
 	)
-	var i PaymentMethod
-	err := row.Scan(
-		&i.ID,
-		&i.CustomerID,
-		&i.Type,
-		&i.CardLast4,
-		&i.CardBrand,
-		&i.CardExpMonth,
-		&i.CardExpYear,
-		&i.BankAccountLast4,
-		&i.BankAccountBankName,
-		&i.IsDefault,
-		&i.StripeID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return &i, err
+	return err
 }

@@ -1,4 +1,4 @@
--- name: CreatePaymentMethod :one
+-- name: CreatePaymentMethod :exec
 INSERT INTO payment_methods (
     customer_id,
     type,
@@ -12,17 +12,18 @@ INSERT INTO payment_methods (
     stripe_id
 ) VALUES (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-         )
-RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
+         );
+-- RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 
 -- name: GetPaymentMethod :one
 SELECT id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at
 FROM payment_methods
 WHERE id = $1 LIMIT 1;
 
--- name: UpdatePaymentMethod :one
+-- name: UpdatePaymentMethod :exec
 UPDATE payment_methods
-SET type = $2,
+SET
+    type = $2,
     card_last4 = $3,
     card_brand = $4,
     card_exp_month = $5,
@@ -32,8 +33,10 @@ SET type = $2,
     is_default = $9,
     stripe_id = $10,
     updated_at = NOW()
-WHERE id = $1
-RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
+WHERE
+    id = $1
+  AND updated_at = $11;
+-- RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 
 -- name: DeletePaymentMethod :exec
 DELETE FROM payment_methods WHERE id = $1;
