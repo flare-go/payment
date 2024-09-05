@@ -1,12 +1,12 @@
--- name: CreateCustomer :exec
+-- name: CreateCustomer :one
 INSERT INTO customers (
     user_id,
     balance,
     stripe_id
 ) VALUES (
              $1, $2, $3
-         );
--- RETURNING id, user_id, balance, stripe_id, created_at, updated_at;
+         )
+RETURNING id, created_at, updated_at;
 
 -- name: GetCustomer :one
 SELECT c.id, c.user_id, c.balance, c.stripe_id, c.created_at, c.updated_at,

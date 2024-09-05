@@ -10,6 +10,7 @@ DROP INDEX IF EXISTS idx_payment_intents_stripe_id;
 DROP INDEX IF EXISTS idx_invoice_items_invoice_id;
 
 -- 刪除表
+DROP TABLE IF EXISTS refunds;
 DROP TABLE IF EXISTS payment_intents;
 DROP TABLE IF EXISTS payment_methods;
 DROP TABLE IF EXISTS invoice_items;
@@ -20,6 +21,7 @@ DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS customers;
 
 -- 刪除 ENUM 類型
+DROP TYPE IF EXISTS refund_status;
 DROP TYPE IF EXISTS payment_intent_status;
 DROP TYPE IF EXISTS payment_method_type;
 DROP TYPE IF EXISTS invoice_status;

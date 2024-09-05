@@ -1,9 +1,10 @@
 package models
 
 import (
+	"time"
+
 	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
-	"time"
 )
 
 // Price 代表產品的價格方案
@@ -19,6 +20,7 @@ type Price struct {
 	TrialPeriodDays        int32          `json:"trial_period_days,omitempty"`
 	Active                 bool           `json:"active"`
 	StripeID               string         `json:"stripe_id"`
+	ProductStripeID        string         `json:"product_stripe_id"`
 	CreatedAt              time.Time      `json:"created_at"`
 	UpdatedAt              time.Time      `json:"updated_at"`
 }

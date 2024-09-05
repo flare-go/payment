@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"goflare.io/payment/models/enum"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
+	"goflare.io/payment/models/enum"
 )
 
 type Service interface {

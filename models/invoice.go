@@ -1,9 +1,10 @@
 package models
 
 import (
+	"time"
+
 	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
-	"time"
 )
 
 // Invoice 代表訂閱或一次性購買的發票
@@ -14,9 +15,9 @@ type Invoice struct {
 	SubscriptionID  *uint64            `json:"subscription_id,omitempty"`
 	Status          enum.InvoiceStatus `json:"status"`
 	Currency        enum.Currency      `json:"currency"`
-	AmountDue       uint64             `json:"amount_due"`
-	AmountPaid      uint64             `json:"amount_paid"`
-	AmountRemaining uint64             `json:"amount_remaining"`
+	AmountDue       float64            `json:"amount_due"`
+	AmountPaid      float64            `json:"amount_paid"`
+	AmountRemaining float64            `json:"amount_remaining"`
 	StripeID        string             `json:"stripe_id"`
 	InvoiceItems    []*InvoiceItem     `json:"invoice_items"`
 	DueDate         time.Time          `json:"due_date"`
@@ -34,9 +35,9 @@ func (i *Invoice) ConvertFromSQLCInvoice(sqlcInvoice any) *Invoice {
 	var (
 		stripeID                               string
 		id, customerID, subscriptionID         uint64
+		amountDue, amountPaid, amountRemaining float64
 		status                                 enum.InvoiceStatus
 		currency                               enum.Currency
-		amountDue, amountPaid, amountRemaining int64
 		dueDate, paidAt, createdAt, updatedAt  time.Time
 	)
 

@@ -11,13 +11,14 @@ import (
 type Querier interface {
 	// RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at;
 	CancelSubscription(ctx context.Context, id uint64) error
-	CreateCustomer(ctx context.Context, arg CreateCustomerParams) error
+	CreateCustomer(ctx context.Context, arg CreateCustomerParams) (*CreateCustomerRow, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) error
 	CreateInvoiceItem(ctx context.Context, arg CreateInvoiceItemParams) error
 	CreatePaymentIntent(ctx context.Context, arg CreatePaymentIntentParams) error
 	CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error
 	CreatePrice(ctx context.Context, arg CreatePriceParams) error
-	CreateProduct(ctx context.Context, arg CreateProductParams) error
+	CreateProduct(ctx context.Context, arg CreateProductParams) (*CreateProductRow, error)
+	CreateRefund(ctx context.Context, arg CreateRefundParams) error
 	CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) error
 	DeleteCustomer(ctx context.Context, id uint64) error
 	DeleteInvoice(ctx context.Context, id uint64) error
@@ -26,10 +27,9 @@ type Querier interface {
 	// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 	DeletePaymentMethod(ctx context.Context, id uint64) error
 	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
-	DeletePrice(ctx context.Context, id uint64) error
-	// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
+	DeletePrice(ctx context.Context, id uint64) (uint64, error)
 	DeleteProduct(ctx context.Context, id uint64) error
-	// RETURNING id, user_id, balance, stripe_id, created_at, updated_at;
+	DeleteRefund(ctx context.Context, id uint64) error
 	GetCustomer(ctx context.Context, dollar_1 *int32) (*GetCustomerRow, error)
 	GetExpiringSubscriptions(ctx context.Context, arg GetExpiringSubscriptionsParams) ([]*Subscription, error)
 	// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
@@ -42,10 +42,12 @@ type Querier interface {
 	GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMethod, error)
 	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
 	GetPrice(ctx context.Context, id uint64) (*Price, error)
-	// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
 	GetProduct(ctx context.Context, id uint64) (*Product, error)
+	GetRefund(ctx context.Context, id uint64) (*Refund, error)
 	// RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at;
 	GetSubscription(ctx context.Context, id uint64) (*Subscription, error)
+	ListActivePrices(ctx context.Context, productID uint64) ([]*Price, error)
+	ListByPaymentIntentID(ctx context.Context, paymentIntentID uint64) ([]*Refund, error)
 	ListCustomers(ctx context.Context, arg ListCustomersParams) ([]*ListCustomersRow, error)
 	ListInvoiceItems(ctx context.Context, invoiceID uint64) ([]*InvoiceItem, error)
 	// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
@@ -54,8 +56,10 @@ type Querier interface {
 	// RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
 	ListPaymentIntents(ctx context.Context, arg ListPaymentIntentsParams) ([]*PaymentIntent, error)
 	ListPaymentMethods(ctx context.Context, arg ListPaymentMethodsParams) ([]*PaymentMethod, error)
-	ListPrices(ctx context.Context, arg ListPricesParams) ([]*Price, error)
+	ListPrices(ctx context.Context, productID uint64) ([]*Price, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]*Product, error)
+	ListRefunds(ctx context.Context, arg ListRefundsParams) ([]*Refund, error)
+	ListRefundsByStripeID(ctx context.Context, stripeID string) ([]*Refund, error)
 	// RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at;
 	ListSubscriptions(ctx context.Context, arg ListSubscriptionsParams) ([]*Subscription, error)
 	ListSubscriptionsByStripeID(ctx context.Context, stripeID string) ([]*Subscription, error)
@@ -66,7 +70,8 @@ type Querier interface {
 	UpdatePaymentIntent(ctx context.Context, arg UpdatePaymentIntentParams) error
 	UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMethodParams) error
 	UpdatePrice(ctx context.Context, arg UpdatePriceParams) error
-	UpdateProduct(ctx context.Context, arg UpdateProductParams) error
+	UpdateProduct(ctx context.Context, arg UpdateProductParams) (*UpdateProductRow, error)
+	UpdateRefund(ctx context.Context, arg UpdateRefundParams) error
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) error
 }
 

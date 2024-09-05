@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/stripe/stripe-go/v79/webhook"
 	"strconv"
 	"time"
 
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/client"
+	"github.com/stripe/stripe-go/v79/webhook"
 
+	"goflare.io/payment/config"
 	"goflare.io/payment/customer"
 	"goflare.io/payment/invoice"
 	"goflare.io/payment/models"
@@ -19,6 +20,7 @@ import (
 	"goflare.io/payment/payment_method"
 	"goflare.io/payment/price"
 	"goflare.io/payment/product"
+	"goflare.io/payment/refund"
 	"goflare.io/payment/subscription"
 )
 
@@ -31,18 +33,20 @@ type StripePayment struct {
 	invoiceService       invoice.Service
 	paymentMethodService payment_method.Service
 	paymentIntentService payment_intent.Service
+	refundService        refund.Service
 }
 
-func NewStripePayment(apiKey string,
+func NewStripePayment(config *config.Config,
 	cs customer.Service,
 	ps product.Service,
 	prs price.Service,
 	ss subscription.Service,
 	is invoice.Service,
 	pms payment_method.Service,
-	pis payment_intent.Service) Payment {
+	pis payment_intent.Service,
+	rs refund.Service) Payment {
 	return &StripePayment{
-		client:               client.New(apiKey, nil),
+		client:               client.New(config.Stripe.SecretKey, nil),
 		customerService:      cs,
 		productService:       ps,
 		priceService:         prs,
@@ -50,11 +54,12 @@ func NewStripePayment(apiKey string,
 		invoiceService:       is,
 		paymentMethodService: pms,
 		paymentIntentService: pis,
+		refundService:        rs,
 	}
 }
 
 // CreateCustomer creates a new customer in Stripe and in the local database
-func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, email, name string) (*models.Customer, error) {
+func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, email, name string) error {
 	params := &stripe.CustomerParams{
 		Email: stripe.String(email),
 		Name:  stripe.String(name),
@@ -64,20 +69,20 @@ func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, emai
 	}
 	stripeCustomer, err := sp.client.Customers.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Stripe customer: %w", err)
+		return fmt.Errorf("failed to create Stripe customer: %w", err)
 	}
 
 	customerModel := &models.Customer{
 		UserID:   userID,
-		Email:    email,
 		Name:     name,
+		Email:    email,
 		StripeID: stripeCustomer.ID,
 	}
 	if err = sp.customerService.Create(ctx, customerModel); err != nil {
-		return nil, fmt.Errorf("failed to create local customer record: %w", err)
+		return fmt.Errorf("failed to create local customer record: %w", err)
 	}
 
-	return customerModel, nil
+	return nil
 }
 
 // GetCustomer retrieves a customer from the local database
@@ -85,23 +90,22 @@ func (sp *StripePayment) GetCustomer(ctx context.Context, customerID uint64) (*m
 	return sp.customerService.GetByID(ctx, customerID)
 }
 
-// UpdateCustomer updates a customer in Stripe and in the local database
-func (sp *StripePayment) UpdateCustomer(ctx context.Context, customer *models.Customer) (*models.Customer, error) {
+// UpdateCustomerBalance updates a customer in Stripe and in the local database
+func (sp *StripePayment) UpdateCustomerBalance(ctx context.Context, updateCustomer *models.Customer) error {
+
 	params := &stripe.CustomerParams{
-		Email: stripe.String(customer.Email),
-		Name:  stripe.String(customer.Name),
-	}
-	_, err := sp.client.Customers.Update(customer.StripeID, params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update Stripe customer: %w", err)
+		Balance: &updateCustomer.Balance,
 	}
 
-	err = sp.customerService.Update(ctx, customer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update local customer record: %w", err)
+	if _, err := sp.client.Customers.Update(updateCustomer.StripeID, params); err != nil {
+		return fmt.Errorf("failed to update Stripe customer: %w", err)
 	}
 
-	return customer, nil
+	if err := sp.customerService.UpdateBalance(ctx, updateCustomer.ID, uint64(updateCustomer.Balance)); err != nil {
+		return fmt.Errorf("failed to update local customer record: %w", err)
+	}
+
+	return nil
 }
 
 // DeleteCustomer deletes a customer from Stripe and from the local database
@@ -123,54 +127,125 @@ func (sp *StripePayment) DeleteCustomer(ctx context.Context, customerID uint64) 
 }
 
 // CreateProduct creates a new product in Stripe and in the local database
-func (sp *StripePayment) CreateProduct(ctx context.Context, name, description string, active bool) (*models.Product, error) {
-	params := &stripe.ProductParams{
-		Name:        stripe.String(name),
-		Description: stripe.String(description),
-		Active:      stripe.Bool(active),
+func (sp *StripePayment) CreateProduct(ctx context.Context, req models.Product) error {
+	productParams := &stripe.ProductParams{
+		Name:        stripe.String(req.Name),
+		Description: stripe.String(req.Description),
+		Active:      stripe.Bool(req.Active),
+		Metadata:    req.Metadata,
 	}
-	stripeProduct, err := sp.client.Products.New(params)
+	stripeProduct, err := sp.client.Products.New(productParams)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Stripe product: %w", err)
+		return fmt.Errorf("failed to create Stripe product: %w", err)
 	}
 
+	// 創建本地 Product
 	productModel := &models.Product{
-		Name:        name,
-		Description: description,
-		Active:      active,
+		Name:        req.Name,
+		Description: req.Description,
+		Active:      req.Active,
+		Metadata:    req.Metadata,
 		StripeID:    stripeProduct.ID,
 	}
 
 	if err = sp.productService.Create(ctx, productModel); err != nil {
-		return nil, fmt.Errorf("failed to create local product record: %w", err)
+		return fmt.Errorf("failed to create local product: %w", err)
 	}
 
+	// 創建 Prices
+	var prices []*models.Price
+	for _, priceReq := range req.Prices {
+		priceParams := &stripe.PriceParams{
+			Product:    stripe.String(stripeProduct.ID),
+			Currency:   stripe.String(string(priceReq.Currency)),
+			UnitAmount: stripe.Int64(int64(priceReq.UnitAmount * 100)), // 轉換為最小單位
+		}
+
+		if priceReq.Type == enum.PriceTypeRecurring {
+			priceParams.Recurring = &stripe.PriceRecurringParams{
+				Interval:      stripe.String(string(priceReq.RecurringInterval)),
+				IntervalCount: stripe.Int64(int64(priceReq.RecurringIntervalCount)),
+			}
+			if priceReq.TrialPeriodDays != 0 {
+				priceParams.Recurring.TrialPeriodDays = stripe.Int64(int64(priceReq.TrialPeriodDays))
+			}
+		}
+
+		stripePrice, err := sp.client.Prices.New(priceParams)
+		if err != nil {
+			return fmt.Errorf("failed to create Stripe price: %w", err)
+		}
+
+		priceModel := &models.Price{
+			ProductID:              productModel.ID,
+			Type:                   priceReq.Type,
+			Currency:               priceReq.Currency,
+			UnitAmount:             priceReq.UnitAmount,
+			RecurringInterval:      priceReq.RecurringInterval,
+			RecurringIntervalCount: priceReq.RecurringIntervalCount,
+			TrialPeriodDays:        priceReq.TrialPeriodDays,
+			StripeID:               stripePrice.ID,
+		}
+
+		if err = sp.priceService.Create(ctx, priceModel); err != nil {
+			return fmt.Errorf("failed to create local price: %w", err)
+		}
+
+		prices = append(prices, priceModel)
+	}
+
+	return nil
+}
+
+func (sp *StripePayment) GetProductWithActivePrices(ctx context.Context, productID uint64) (*models.Product, error) {
+	productModel, err := sp.productService.GetByID(ctx, productID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Stripe product: %w", err)
+	}
+
+	prices, err := sp.priceService.ListActive(ctx, productID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Stripe prices: %w", err)
+	}
+
+	productModel.Prices = prices
 	return productModel, nil
 }
 
-// GetProduct retrieves a product from the local database
-func (sp *StripePayment) GetProduct(ctx context.Context, productID uint64) (*models.Product, error) {
-	return sp.productService.GetByID(ctx, productID)
+// GetProductWithAllPrices retrieves a product from the local database
+func (sp *StripePayment) GetProductWithAllPrices(ctx context.Context, productID uint64) (*models.Product, error) {
+	productModel, err := sp.productService.GetByID(ctx, productID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Stripe product: %w", err)
+	}
+
+	prices, err := sp.priceService.List(ctx, productID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Stripe prices: %w", err)
+	}
+
+	productModel.Prices = prices
+	return productModel, nil
 }
 
 // UpdateProduct updates a product in Stripe and in the local database
-func (sp *StripePayment) UpdateProduct(ctx context.Context, product *models.Product) (*models.Product, error) {
+func (sp *StripePayment) UpdateProduct(ctx context.Context, product *models.Product) error {
 	params := &stripe.ProductParams{
 		Name:        stripe.String(product.Name),
 		Description: stripe.String(product.Description),
 		Active:      stripe.Bool(product.Active),
-	}
-	_, err := sp.client.Products.Update(product.StripeID, params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update Stripe product: %w", err)
+		Metadata:    product.Metadata,
 	}
 
-	err = sp.productService.Update(ctx, product)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update local product record: %w", err)
+	if _, err := sp.client.Products.Update(product.StripeID, params); err != nil {
+		return fmt.Errorf("failed to update Stripe product: %w", err)
 	}
 
-	return product, nil
+	if err := sp.productService.Update(ctx, product); err != nil {
+		return fmt.Errorf("failed to update local product record: %w", err)
+	}
+
+	return nil
 }
 
 // DeleteProduct deletes a product from Stripe and from the local database
@@ -192,76 +267,42 @@ func (sp *StripePayment) DeleteProduct(ctx context.Context, productID uint64) er
 }
 
 // ListProducts lists all products from the local database
-func (sp *StripePayment) ListProducts(ctx context.Context, active bool) ([]*models.Product, error) {
-	return sp.productService.List(ctx, 1000, 0, active) // Assuming a large limit, you might want to implement pagination
+func (sp *StripePayment) ListProducts(ctx context.Context) ([]*models.Product, error) {
+	return sp.productService.List(ctx, 1000, 0) // Assuming a large limit, you might want to implement pagination
 }
 
 // CreatePrice creates a new price in Stripe and in the local database
-func (sp *StripePayment) CreatePrice(ctx context.Context, productID uint64, priceType enum.PriceType, currency enum.Currency, unitAmount float64, interval enum.Interval, intervalCount, trialPeriodDays int32) (*models.Price, error) {
-	productModel, err := sp.productService.GetByID(ctx, productID)
+func (sp *StripePayment) CreatePrice(ctx context.Context, price models.Price) error {
+	productModel, err := sp.productService.GetByID(ctx, price.ProductID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get product: %w", err)
+		return fmt.Errorf("failed to get product: %w", err)
 	}
 
 	params := &stripe.PriceParams{
 		Product:    stripe.String(productModel.StripeID),
-		Currency:   stripe.String(string(currency)),
-		UnitAmount: stripe.Int64(int64(unitAmount)),
+		Currency:   stripe.String(string(price.Currency)),
+		UnitAmount: stripe.Int64(int64(price.UnitAmount * 100)),
 	}
 
-	if priceType == enum.PriceTypeRecurring {
+	if price.Type == enum.PriceTypeRecurring {
 		params.Recurring = &stripe.PriceRecurringParams{
-			Interval:        stripe.String(string(interval)),
-			IntervalCount:   stripe.Int64(int64(intervalCount)),
-			TrialPeriodDays: stripe.Int64(int64(trialPeriodDays)),
+			Interval:        stripe.String(string(price.RecurringInterval)),
+			IntervalCount:   stripe.Int64(int64(price.RecurringIntervalCount)),
+			TrialPeriodDays: stripe.Int64(int64(price.TrialPeriodDays)),
 		}
 	}
 
 	stripePrice, err := sp.client.Prices.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Stripe price: %w", err)
+		return fmt.Errorf("failed to create Stripe price: %w", err)
 	}
 
-	priceModel := &models.Price{
-		ProductID:              productID,
-		Type:                   priceType,
-		Currency:               currency,
-		UnitAmount:             unitAmount,
-		RecurringInterval:      interval,
-		RecurringIntervalCount: intervalCount,
-		TrialPeriodDays:        trialPeriodDays,
-		StripeID:               stripePrice.ID,
-	}
-	if err = sp.priceService.Create(ctx, priceModel); err != nil {
-		return nil, fmt.Errorf("failed to create local price record: %w", err)
+	price.StripeID = stripePrice.ID
+	if err = sp.priceService.Create(ctx, &price); err != nil {
+		return fmt.Errorf("failed to create local price record: %w", err)
 	}
 
-	return priceModel, nil
-}
-
-// GetPrice retrieves a price from the local database
-func (sp *StripePayment) GetPrice(ctx context.Context, priceID uint64) (*models.Price, error) {
-	return sp.priceService.GetByID(ctx, priceID)
-}
-
-// UpdatePrice updates a price in Stripe and in the local database
-func (sp *StripePayment) UpdatePrice(ctx context.Context, price *models.Price) (*models.Price, error) {
-	params := &stripe.PriceParams{
-		Active: stripe.Bool(price.Active),
-		// Note: Most fields of a Price cannot be updated after creation in Stripe
-		// We're only updating the 'active' status here
-	}
-	_, err := sp.client.Prices.Update(price.StripeID, params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update Stripe price: %w", err)
-	}
-
-	err = sp.priceService.Update(ctx, price)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update local price record: %w", err)
-	}
-
-	return price, nil
+	return nil
 }
 
 // DeletePrice deletes a price from Stripe and from the local database
@@ -272,26 +313,17 @@ func (sp *StripePayment) DeletePrice(ctx context.Context, priceID uint64) error 
 	}
 
 	// In Stripe, you can't delete prices, you can only deactivate them
-	_, err = sp.client.Prices.Update(priceModel.StripeID, &stripe.PriceParams{
+	if _, err = sp.client.Prices.Update(priceModel.StripeID, &stripe.PriceParams{
 		Active: stripe.Bool(false),
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to deactivate Stripe price: %w", err)
 	}
 
-	err = sp.priceService.Delete(ctx, priceID)
-	if err != nil {
+	if err = sp.priceService.Delete(ctx, priceID); err != nil {
 		return fmt.Errorf("failed to delete local price record: %w", err)
 	}
 
 	return nil
-}
-
-// ListPrices lists all prices for a product from the local database
-func (sp *StripePayment) ListPrices(ctx context.Context, productID uint64, active bool) ([]*models.Price, error) {
-	return sp.priceService.List(ctx, productID, 1000, 0, active)
-	// Assuming a large limit,
-	// you might want to implement pagination
 }
 
 // CreateSubscription creates a new subscription in Stripe and in the local database
@@ -330,8 +362,7 @@ func (sp *StripePayment) CreateSubscription(ctx context.Context, customerID, pri
 		StripeID:           stripeSubscription.ID,
 	}
 
-	err = sp.subscriptionService.Create(ctx, subscriptionModel)
-	if err != nil {
+	if err = sp.subscriptionService.Create(ctx, subscriptionModel); err != nil {
 		return nil, fmt.Errorf("failed to create local subscription record: %w", err)
 	}
 
@@ -357,8 +388,7 @@ func (sp *StripePayment) UpdateSubscription(ctx context.Context, subscription *m
 	subscription.CurrentPeriodStart = time.Unix(stripeSubscription.CurrentPeriodStart, 0)
 	subscription.CurrentPeriodEnd = time.Unix(stripeSubscription.CurrentPeriodEnd, 0)
 
-	err = sp.subscriptionService.Update(ctx, subscription)
-	if err != nil {
+	if err = sp.subscriptionService.Update(ctx, subscription); err != nil {
 		return nil, fmt.Errorf("failed to update local subscription record: %w", err)
 	}
 
@@ -388,8 +418,7 @@ func (sp *StripePayment) CancelSubscription(ctx context.Context, subscriptionID 
 		subscriptionModel.CanceledAt = &now
 	}
 
-	err = sp.subscriptionService.Update(ctx, subscriptionModel)
-	if err != nil {
+	if err = sp.subscriptionService.Update(ctx, subscriptionModel); err != nil {
 		return nil, fmt.Errorf("failed to update local subscription record: %w", err)
 	}
 
@@ -431,15 +460,14 @@ func (sp *StripePayment) CreateInvoice(ctx context.Context, customerID, subscrip
 		SubscriptionID:  &subscriptionID,
 		Status:          enum.InvoiceStatus(stripeInvoice.Status),
 		Currency:        enum.Currency(stripeInvoice.Currency),
-		AmountDue:       uint64(stripeInvoice.AmountDue),
-		AmountPaid:      uint64(stripeInvoice.AmountPaid),
-		AmountRemaining: uint64(stripeInvoice.AmountRemaining),
+		AmountDue:       float64(stripeInvoice.AmountDue),
+		AmountPaid:      float64(stripeInvoice.AmountPaid),
+		AmountRemaining: float64(stripeInvoice.AmountRemaining),
 		DueDate:         time.Unix(stripeInvoice.DueDate, 0),
 		StripeID:        stripeInvoice.ID,
 	}
 
-	err = sp.invoiceService.Create(ctx, invoiceModel)
-	if err != nil {
+	if err = sp.invoiceService.Create(ctx, invoiceModel); err != nil {
 		return nil, fmt.Errorf("failed to create local invoice record: %w", err)
 	}
 
@@ -464,14 +492,13 @@ func (sp *StripePayment) PayInvoice(ctx context.Context, invoiceID uint64) (*mod
 	}
 
 	invoiceModel.Status = enum.InvoiceStatus(stripeInvoice.Status)
-	invoiceModel.AmountPaid = uint64(stripeInvoice.AmountPaid)
-	invoiceModel.AmountRemaining = uint64(stripeInvoice.AmountRemaining)
+	invoiceModel.AmountPaid = float64(stripeInvoice.AmountPaid)
+	invoiceModel.AmountRemaining = float64(stripeInvoice.AmountRemaining)
 	if stripeInvoice.Status == stripe.InvoiceStatusPaid {
 		invoiceModel.PaidAt = time.Now()
 	}
 
-	err = sp.invoiceService.Update(ctx, invoiceModel)
-	if err != nil {
+	if err = sp.invoiceService.Update(ctx, invoiceModel); err != nil {
 		return nil, fmt.Errorf("failed to update local invoice record: %w", err)
 	}
 
@@ -502,10 +529,9 @@ func (sp *StripePayment) CreatePaymentMethod(ctx context.Context, customerID uin
 	}
 
 	// Attach the payment method to the customer
-	_, err = sp.client.PaymentMethods.Attach(stripePaymentMethod.ID, &stripe.PaymentMethodAttachParams{
+	if _, err = sp.client.PaymentMethods.Attach(stripePaymentMethod.ID, &stripe.PaymentMethodAttachParams{
 		Customer: stripe.String(customerModel.StripeID),
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to attach payment method to customer: %w", err)
 	}
 
@@ -535,8 +561,7 @@ func (sp *StripePayment) GetPaymentMethod(ctx context.Context, paymentMethodID u
 func (sp *StripePayment) UpdatePaymentMethod(ctx context.Context, paymentMethod *models.PaymentMethod) (*models.PaymentMethod, error) {
 	// Note: Stripe doesn't allow updating most payment method details.
 	// We'll just update our local record.
-	err := sp.paymentMethodService.Update(ctx, paymentMethod)
-	if err != nil {
+	if err := sp.paymentMethodService.Update(ctx, paymentMethod); err != nil {
 		return nil, fmt.Errorf("failed to update local payment method record: %w", err)
 	}
 
@@ -550,13 +575,11 @@ func (sp *StripePayment) DeletePaymentMethod(ctx context.Context, paymentMethodI
 		return fmt.Errorf("failed to get payment method: %w", err)
 	}
 
-	_, err = sp.client.PaymentMethods.Detach(paymentMethod.StripeID, nil)
-	if err != nil {
+	if _, err = sp.client.PaymentMethods.Detach(paymentMethod.StripeID, nil); err != nil {
 		return fmt.Errorf("failed to detach Stripe payment method: %w", err)
 	}
 
-	err = sp.paymentMethodService.Delete(ctx, paymentMethodID)
-	if err != nil {
+	if err = sp.paymentMethodService.Delete(ctx, paymentMethodID); err != nil {
 		return fmt.Errorf("failed to delete local payment method record: %w", err)
 	}
 
@@ -589,15 +612,14 @@ func (sp *StripePayment) CreatePaymentIntent(ctx context.Context, customerID, am
 
 	paymentIntent := &models.PaymentIntent{
 		CustomerID:   customerID,
-		Amount:       amount,
+		Amount:       float64(amount),
 		Currency:     currency,
 		Status:       enum.PaymentIntentStatus(stripePaymentIntent.Status),
 		ClientSecret: stripePaymentIntent.ClientSecret,
 		StripeID:     stripePaymentIntent.ID,
 	}
 
-	err = sp.paymentIntentService.Create(ctx, paymentIntent)
-	if err != nil {
+	if err = sp.paymentIntentService.Create(ctx, paymentIntent); err != nil {
 		return nil, fmt.Errorf("failed to create local payment intent record: %w", err)
 	}
 
@@ -633,8 +655,7 @@ func (sp *StripePayment) ConfirmPaymentIntent(ctx context.Context, paymentIntent
 	paymentIntent.Status = enum.PaymentIntentStatus(stripePaymentIntent.Status)
 	paymentIntent.PaymentMethodID = &paymentMethodID
 
-	err = sp.paymentIntentService.Update(ctx, paymentIntent)
-	if err != nil {
+	if err = sp.paymentIntentService.Update(ctx, paymentIntent); err != nil {
 		return nil, fmt.Errorf("failed to update local payment intent record: %w", err)
 	}
 
@@ -655,12 +676,74 @@ func (sp *StripePayment) CancelPaymentIntent(ctx context.Context, paymentIntentI
 
 	paymentIntent.Status = enum.PaymentIntentStatus(stripePaymentIntent.Status)
 
-	err = sp.paymentIntentService.Update(ctx, paymentIntent)
-	if err != nil {
+	if err = sp.paymentIntentService.Update(ctx, paymentIntent); err != nil {
 		return nil, fmt.Errorf("failed to update local payment intent record: %w", err)
 	}
 
 	return paymentIntent, nil
+}
+
+func (sp *StripePayment) CreateRefund(ctx context.Context, paymentIntentID uint64, amount float64, reason string) (*models.Refund, error) {
+	params := &stripe.RefundParams{
+		PaymentIntent: stripe.String(strconv.FormatUint(paymentIntentID, 10)),
+		Amount:        stripe.Int64(int64(amount * 100)), // Convert to cents
+		Reason:        stripe.String(reason),
+	}
+
+	stripeRefund, err := sp.client.Refunds.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Stripe refund: %w", err)
+	}
+
+	refundModel := &models.Refund{
+		PaymentIntentID: paymentIntentID,
+		Amount:          float64(stripeRefund.Amount) / 100, // Convert back to dollars
+		Status:          enum.RefundStatus(stripeRefund.Status),
+		Reason:          reason,
+		StripeID:        stripeRefund.ID,
+	}
+
+	if err = sp.refundService.Create(ctx, refundModel); err != nil {
+		return nil, fmt.Errorf("failed to create local refund record: %w", err)
+	}
+
+	return refundModel, nil
+}
+
+// GetRefund retrieves a refund from the local database
+func (sp *StripePayment) GetRefund(ctx context.Context, refundID uint64) (*models.Refund, error) {
+	return sp.refundService.GetByID(ctx, refundID)
+}
+
+// UpdateRefund updates a refund in Stripe and in the local database
+func (sp *StripePayment) UpdateRefund(ctx context.Context, refundID uint64, reason string) (*models.Refund, error) {
+	refundModel, err := sp.refundService.GetByID(ctx, refundID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get refund: %w", err)
+	}
+
+	params := &stripe.RefundParams{
+		Reason: stripe.String(reason),
+	}
+
+	stripeRefund, err := sp.client.Refunds.Update(refundModel.StripeID, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update Stripe refund: %w", err)
+	}
+
+	refundModel.Reason = reason
+	refundModel.Status = enum.RefundStatus(stripeRefund.Status)
+
+	if err = sp.refundService.UpdateStatus(ctx, refundID, refundModel.Status, refundModel.Reason); err != nil {
+		return nil, fmt.Errorf("failed to update local refund record: %w", err)
+	}
+
+	return refundModel, nil
+}
+
+// ListRefunds lists all refunds for a payment intent from the local database
+func (sp *StripePayment) ListRefunds(ctx context.Context, paymentIntentID uint64) ([]*models.Refund, error) {
+	return sp.refundService.ListByPaymentIntentID(ctx, paymentIntentID)
 }
 
 // HandleStripeWebhook handles Stripe webhook events
@@ -673,19 +756,23 @@ func (sp *StripePayment) HandleStripeWebhook(ctx context.Context, payload []byte
 	switch event.Type {
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var subscriptionStripeModel stripe.Subscription
-		err = json.Unmarshal(event.Data.Raw, &subscriptionStripeModel)
-		if err != nil {
+		if err = json.Unmarshal(event.Data.Raw, &subscriptionStripeModel); err != nil {
 			return fmt.Errorf("failed to unmarshal subscription data: %w", err)
 		}
 		return sp.handleSubscriptionEvent(ctx, &subscriptionStripeModel, event.Type)
 
 	case "invoice.paid", "invoice.payment_failed":
 		var invoiceStripeModel stripe.Invoice
-		err := json.Unmarshal(event.Data.Raw, &invoiceStripeModel)
-		if err != nil {
+		if err = json.Unmarshal(event.Data.Raw, &invoiceStripeModel); err != nil {
 			return fmt.Errorf("failed to unmarshal invoice data: %w", err)
 		}
 		return sp.handleInvoiceEvent(ctx, &invoiceStripeModel, event.Type)
+	case "charge.refunded":
+		var chargeStripeModel stripe.Charge
+		if err = json.Unmarshal(event.Data.Raw, &chargeStripeModel); err != nil {
+			return fmt.Errorf("failed to unmarshal charge data: %w", err)
+		}
+		return sp.handleRefundEvent(ctx, &chargeStripeModel)
 
 	// Add more event types as needed
 
@@ -729,8 +816,7 @@ func (sp *StripePayment) handleSubscriptionEvent(ctx context.Context, stripeSubs
 	}
 
 	// Update the subscription in the database
-	err = sp.subscriptionService.Update(ctx, subscriptionModel)
-	if err != nil {
+	if err = sp.subscriptionService.Update(ctx, subscriptionModel); err != nil {
 		return fmt.Errorf("failed to update local subscription: %w", err)
 	}
 
@@ -750,21 +836,47 @@ func (sp *StripePayment) handleInvoiceEvent(ctx context.Context, stripeInvoice *
 	switch eventType {
 	case "invoice.paid":
 		invoiceModel.Status = enum.InvoiceStatusPaid
-		invoiceModel.AmountPaid = uint64(stripeInvoice.AmountPaid)
-		invoiceModel.AmountRemaining = uint64(stripeInvoice.AmountRemaining)
+		invoiceModel.AmountPaid = float64(stripeInvoice.AmountPaid)
+		invoiceModel.AmountRemaining = float64(stripeInvoice.AmountRemaining)
 		invoiceModel.PaidAt = time.Now()
 
 	case "invoice.payment_failed":
 		invoiceModel.Status = enum.InvoiceStatusPaymentFailed
-		invoiceModel.AmountPaid = uint64(stripeInvoice.AmountPaid)
-		invoiceModel.AmountRemaining = uint64(stripeInvoice.AmountRemaining)
+		invoiceModel.AmountPaid = float64(stripeInvoice.AmountPaid)
+		invoiceModel.AmountRemaining = float64(stripeInvoice.AmountRemaining)
 	}
 
 	// Update the invoice in the database
-	err = sp.invoiceService.Update(ctx, invoiceModel)
-	if err != nil {
+	if err = sp.invoiceService.Update(ctx, invoiceModel); err != nil {
 		return fmt.Errorf("failed to update local invoice: %w", err)
 	}
 
+	return nil
+}
+
+func (sp *StripePayment) handleRefundEvent(ctx context.Context, stripeCharge *stripe.Charge) error {
+	for _, stripeRefund := range stripeCharge.Refunds.Data {
+		refunds, err := sp.refundService.ListByStripeID(ctx, stripeRefund.ID)
+		if err != nil || len(refunds) == 0 {
+			// 如果本地數據庫中沒有找到對應的退款記錄，創建一個新的
+			refundModel := &models.Refund{
+				Amount:   float64(stripeRefund.Amount) / 100,
+				Status:   enum.RefundStatus(stripeRefund.Status),
+				Reason:   string(stripeRefund.Reason),
+				StripeID: stripeRefund.ID,
+			}
+			if err = sp.refundService.Create(ctx, refundModel); err != nil {
+				return fmt.Errorf("failed to create local refund record: %w", err)
+			}
+		} else {
+			// 如果找到了對應的退款記錄，更新它
+			refundModel := refunds[0]
+			refundModel.Status = enum.RefundStatus(stripeRefund.Status)
+			refundModel.Reason = string(stripeRefund.Reason)
+			if err = sp.refundService.UpdateStatus(ctx, refundModel.ID, refundModel.Status, refundModel.Reason); err != nil {
+				return fmt.Errorf("failed to update local refund record: %w", err)
+			}
+		}
+	}
 	return nil
 }

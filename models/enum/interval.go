@@ -3,8 +3,8 @@ package enum
 type Interval string
 
 const (
-	IntervalDay   Interval = "DAY"
-	IntervalWeek  Interval = "WEEK"
-	IntervalMonth Interval = "MONTH"
-	IntervalYear  Interval = "YEAR"
+	IntervalDay   Interval = "day"
+	IntervalWeek  Interval = "week"
+	IntervalMonth Interval = "month"
+	IntervalYear  Interval = "year"
 )

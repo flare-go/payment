@@ -1,9 +1,10 @@
 package models
 
 import (
+	"time"
+
 	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
-	"time"
 )
 
 // Subscription 代表客戶的訂閱

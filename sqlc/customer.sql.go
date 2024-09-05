@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createCustomer = `-- name: CreateCustomer :exec
+const createCustomer = `-- name: CreateCustomer :one
 INSERT INTO customers (
     user_id,
     balance,
@@ -19,6 +19,7 @@ INSERT INTO customers (
 ) VALUES (
              $1, $2, $3
          )
+RETURNING id, created_at, updated_at
 `
 
 type CreateCustomerParams struct {
@@ -27,9 +28,17 @@ type CreateCustomerParams struct {
 	StripeID string `json:"stripeId"`
 }
 
-func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) error {
-	_, err := q.db.Exec(ctx, createCustomer, arg.UserID, arg.Balance, arg.StripeID)
-	return err
+type CreateCustomerRow struct {
+	ID        uint64             `json:"id"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+}
+
+func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (*CreateCustomerRow, error) {
+	row := q.db.QueryRow(ctx, createCustomer, arg.UserID, arg.Balance, arg.StripeID)
+	var i CreateCustomerRow
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
+	return &i, err
 }
 
 const deleteCustomer = `-- name: DeleteCustomer :exec
@@ -42,7 +51,6 @@ func (q *Queries) DeleteCustomer(ctx context.Context, id uint64) error {
 }
 
 const getCustomer = `-- name: GetCustomer :one
-
 SELECT c.id, c.user_id, c.balance, c.stripe_id, c.created_at, c.updated_at,
        u.email, u.username as name
 FROM customers c
@@ -61,7 +69,6 @@ type GetCustomerRow struct {
 	Name      string             `json:"name"`
 }
 
-// RETURNING id, user_id, balance, stripe_id, created_at, updated_at;
 func (q *Queries) GetCustomer(ctx context.Context, dollar_1 *int32) (*GetCustomerRow, error) {
 	row := q.db.QueryRow(ctx, getCustomer, dollar_1)
 	var i GetCustomerRow

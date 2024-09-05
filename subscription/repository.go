@@ -3,17 +3,18 @@ package subscription
 import (
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgtype"
-	"goflare.io/payment/models/enum"
 	"reflect"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
+
 	"goflare.io/ember"
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
+	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
 )
 
@@ -38,6 +39,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 	if err := poolManager.RegisterPool(reflect.TypeOf(&models.Subscription{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory: func() (any, error) {
 			return models.NewSubscription(), nil
 		},

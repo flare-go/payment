@@ -60,7 +60,7 @@
           },
           {
             "column": "*.amount",
-            "go_type": "uint64"
+            "go_type": "float64"
           },
           {
             "column": "*.price_id",
@@ -68,14 +68,18 @@
           },
           {
             "column": "*.amount_due",
-            "go_type": "uint64"
+            "go_type": "float64"
           },
           {
             "column": "*.amount_remaining",
-            "go_type": "uint64"
+            "go_type": "float64"
           },
           {
             "column": "*.amount_paid",
+            "go_type": "float64"
+          },
+          {
+            "column": "*.payment_intent_id",
             "go_type": "uint64"
           }
         ]

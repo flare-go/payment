@@ -33,9 +33,9 @@ type CreateInvoiceParams struct {
 	SubscriptionID  uint64             `json:"subscriptionId"`
 	Status          InvoiceStatus      `json:"status"`
 	Currency        Currency           `json:"currency"`
-	AmountDue       uint64             `json:"amountDue"`
-	AmountPaid      uint64             `json:"amountPaid"`
-	AmountRemaining uint64             `json:"amountRemaining"`
+	AmountDue       float64            `json:"amountDue"`
+	AmountPaid      float64            `json:"amountPaid"`
+	AmountRemaining float64            `json:"amountRemaining"`
 	DueDate         pgtype.Timestamptz `json:"dueDate"`
 	PaidAt          pgtype.Timestamptz `json:"paidAt"`
 	StripeID        string             `json:"stripeId"`
@@ -199,8 +199,8 @@ WHERE id = $1
 type UpdateInvoiceParams struct {
 	ID              uint64             `json:"id"`
 	Status          InvoiceStatus      `json:"status"`
-	AmountPaid      uint64             `json:"amountPaid"`
-	AmountRemaining uint64             `json:"amountRemaining"`
+	AmountPaid      float64            `json:"amountPaid"`
+	AmountRemaining float64            `json:"amountRemaining"`
 	PaidAt          pgtype.Timestamptz `json:"paidAt"`
 	StripeID        string             `json:"stripeId"`
 }

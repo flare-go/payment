@@ -3,11 +3,11 @@ package customer
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 	"reflect"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"go.uber.org/zap"
 	"goflare.io/ember"
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
@@ -34,9 +34,10 @@ type repository struct {
 }
 
 func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.MultiCache, poolManager ignite.Manager) (Repository, error) {
-	err := poolManager.RegisterPool(reflect.TypeOf(&models.Customer{}), ignite.Config[any]{
+	if err := poolManager.RegisterPool(reflect.TypeOf(&models.Customer{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory: func() (any, error) {
 			return models.NewCustomer(), nil
 		},
@@ -45,8 +46,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 			*c = models.Customer{}
 			return nil
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to register customer pool: %w", err)
 	}
 
@@ -78,7 +78,8 @@ func (r *repository) getFromPool(ctx context.Context) (*models.Customer, func(),
 }
 
 func (r *repository) Create(ctx context.Context, tx pgx.Tx, customer *models.Customer) error {
-	err := sqlc.New(r.conn).WithTx(tx).CreateCustomer(ctx, sqlc.CreateCustomerParams{
+
+	sqlcCustomer, err := sqlc.New(r.conn).WithTx(tx).CreateCustomer(ctx, sqlc.CreateCustomerParams{
 		UserID:   customer.UserID,
 		Balance:  customer.Balance,
 		StripeID: customer.StripeID,
@@ -88,8 +89,11 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, customer *models.Cus
 	}
 
 	// 將新創建的客戶加入緩存
+	customer.ID = sqlcCustomer.ID
+	customer.CreatedAt = sqlcCustomer.CreatedAt.Time
+	customer.UpdatedAt = sqlcCustomer.UpdatedAt.Time
 	cacheKey := fmt.Sprintf("customer:%d", customer.ID)
-	if err := r.cache.Set(ctx, cacheKey, customer, 30*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, &customer); err != nil {
 		r.logger.Warn("Failed to cache new customer", zap.Error(err), zap.Uint64("id", customer.ID))
 	}
 
@@ -126,7 +130,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 	*customer = *models.NewCustomer().ConvertFromSQLCCustomer(sqlcCustomer)
 
 	// 更新緩存
-	if err := r.cache.Set(ctx, cacheKey, customer, 30*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, customer); err != nil {
 		r.logger.Warn("Failed to cache customer", zap.Error(err), zap.Uint64("id", id))
 	}
 
@@ -134,18 +138,17 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 }
 
 func (r *repository) Update(ctx context.Context, tx pgx.Tx, customer *models.Customer) error {
-	err := sqlc.New(r.conn).WithTx(tx).UpdateCustomer(ctx, sqlc.UpdateCustomerParams{
+	if err := sqlc.New(r.conn).WithTx(tx).UpdateCustomer(ctx, sqlc.UpdateCustomerParams{
 		ID:       customer.ID,
 		Balance:  customer.Balance,
 		StripeID: customer.StripeID,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to update customer: %w", err)
 	}
 
 	// 更新緩存
 	cacheKey := fmt.Sprintf("customer:%d", customer.ID)
-	if err := r.cache.Set(ctx, cacheKey, customer, 30*time.Minute); err != nil {
+	if err := r.cache.Set(ctx, cacheKey, customer); err != nil {
 		r.logger.Warn("Failed to update customer in cache", zap.Error(err), zap.Uint64("id", customer.ID))
 	}
 
@@ -153,8 +156,7 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, customer *models.Cus
 }
 
 func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id uint64) error {
-	err := sqlc.New(r.conn).WithTx(tx).DeleteCustomer(ctx, id)
-	if err != nil {
+	if err := sqlc.New(r.conn).WithTx(tx).DeleteCustomer(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete customer: %w", err)
 	}
 
@@ -164,7 +166,7 @@ func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id uint64) error {
 		r.logger.Warn("Failed to delete customer from cache", zap.Error(err), zap.Uint64("id", id))
 	}
 
-	return nil
+	return r.cache.Delete(ctx, cacheKey)
 }
 
 func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64) ([]*models.Customer, error) {
@@ -193,7 +195,7 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64) 
 
 		// 更新每個客戶的緩存
 		cacheKey := fmt.Sprintf("customer:%d", customer.ID)
-		if err := r.cache.Set(ctx, cacheKey, customer, 30*time.Minute); err != nil {
+		if err := r.cache.Set(ctx, cacheKey, customer); err != nil {
 			r.logger.Warn("Failed to cache customer during list", zap.Error(err), zap.Uint64("id", customer.ID))
 		}
 		release()
@@ -202,12 +204,11 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64) 
 	return customers, nil
 }
 
-func (r *repository) UpdateBalance(ctx context.Context, tx pgx.Tx, id, amount uint64) error {
-	err := sqlc.New(r.conn).WithTx(tx).UpdateCustomerBalance(ctx, sqlc.UpdateCustomerBalanceParams{
+func (r *repository) UpdateBalance(ctx context.Context, tx pgx.Tx, id, balance uint64) error {
+	if err := sqlc.New(r.conn).WithTx(tx).UpdateCustomerBalance(ctx, sqlc.UpdateCustomerBalanceParams{
 		ID:      id,
-		Balance: int64(amount),
-	})
-	if err != nil {
+		Balance: int64(balance),
+	}); err != nil {
 		return fmt.Errorf("failed to update customer balance: %w", err)
 	}
 
@@ -218,8 +219,8 @@ func (r *repository) UpdateBalance(ctx context.Context, tx pgx.Tx, id, amount ui
 	if err != nil {
 		r.logger.Warn("Failed to get customer from cache for balance update", zap.Error(err), zap.Uint64("id", id))
 	} else if found {
-		cachedCustomer.Balance = int64(amount)
-		if err := r.cache.Set(ctx, cacheKey, &cachedCustomer, 30*time.Minute); err != nil {
+		cachedCustomer.Balance = int64(balance)
+		if err := r.cache.Set(ctx, cacheKey, &cachedCustomer); err != nil {
 			r.logger.Warn("Failed to update customer balance in cache", zap.Error(err), zap.Uint64("id", id))
 		}
 	}

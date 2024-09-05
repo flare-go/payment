@@ -2,9 +2,10 @@ package models
 
 import (
 	"encoding/json"
-	"goflare.io/payment/sqlc"
 	"log"
 	"time"
+
+	"goflare.io/payment/sqlc"
 )
 
 // Product 代表可訂閱或購買的產品
@@ -16,6 +17,7 @@ type Product struct {
 	Active      bool              `json:"active"`
 	StripeID    string            `json:"stripe_id"`
 	Metadata    map[string]string `json:"metadata"`
+	Prices      []*Price          `json:"prices"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 }

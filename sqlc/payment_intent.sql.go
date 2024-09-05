@@ -26,7 +26,7 @@ INSERT INTO payment_intents (
 
 type CreatePaymentIntentParams struct {
 	CustomerID       uint64              `json:"customerId"`
-	Amount           uint64              `json:"amount"`
+	Amount           float64             `json:"amount"`
 	Currency         Currency            `json:"currency"`
 	Status           PaymentIntentStatus `json:"status"`
 	PaymentMethodID  uint64              `json:"paymentMethodId"`

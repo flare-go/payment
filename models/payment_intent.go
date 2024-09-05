@@ -1,9 +1,10 @@
 package models
 
 import (
+	"time"
+
 	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
-	"time"
 )
 
 // PaymentIntent 代表一次支付意圖
@@ -11,7 +12,7 @@ import (
 type PaymentIntent struct {
 	ID               uint64
 	CustomerID       uint64
-	Amount           uint64
+	Amount           float64
 	Currency         enum.Currency
 	Status           enum.PaymentIntentStatus
 	PaymentMethodID  *uint64
@@ -28,13 +29,16 @@ func NewPaymentIntent() *PaymentIntent {
 
 func (pi *PaymentIntent) ConvertFromSQLCPaymentIntent(sqlcPaymentIntent any) *PaymentIntent {
 
-	var id, customerID, amount uint64
-	var currency enum.Currency
-	var status enum.PaymentIntentStatus
-	var paymentMethodID *uint64
-	var setupFutureUsage *string
-	var stripeID, clientSecret string
-	var createdAt, updatedAt time.Time
+	var (
+		id, customerID         uint64
+		amount                 float64
+		currency               enum.Currency
+		status                 enum.PaymentIntentStatus
+		paymentMethodID        *uint64
+		setupFutureUsage       *string
+		stripeID, clientSecret string
+		createdAt, updatedAt   time.Time
+	)
 
 	switch sp := sqlcPaymentIntent.(type) {
 	case *sqlc.PaymentIntent:

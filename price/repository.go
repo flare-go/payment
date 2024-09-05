@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/ember"
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
@@ -20,7 +21,8 @@ type Repository interface {
 	GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Price, error)
 	Update(ctx context.Context, tx pgx.Tx, price *models.Price) error
 	Delete(ctx context.Context, tx pgx.Tx, id uint64) error
-	List(ctx context.Context, tx pgx.Tx, productID uint64, limit, offset uint64, activeOnly bool) ([]*models.Price, error)
+	List(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error)
+	ListActive(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error)
 }
 
 type repository struct {
@@ -34,6 +36,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 	err := poolManager.RegisterPool(reflect.TypeOf(&models.Price{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory: func() (any, error) {
 			return models.NewPrice(), nil
 		},
@@ -83,7 +86,6 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, price *models.Price)
 		RecurringInterval:      sqlc.NullIntervalType{IntervalType: sqlc.IntervalType(price.RecurringInterval), Valid: price.RecurringInterval != ""},
 		RecurringIntervalCount: price.RecurringIntervalCount,
 		TrialPeriodDays:        price.TrialPeriodDays,
-		Active:                 price.Active,
 		StripeID:               price.StripeID,
 	})
 	if err != nil {
@@ -92,8 +94,16 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, price *models.Price)
 
 	// 將新創建的價格加入緩存
 	cacheKey := fmt.Sprintf("price:%d", price.ID)
-	if err := r.cache.Set(ctx, cacheKey, price, 30*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, price); err != nil {
 		r.logger.Warn("Failed to cache new price", zap.Error(err), zap.Uint64("id", price.ID))
+	}
+	cacheKey = fmt.Sprintf("prices:product:%d", price.ProductID)
+	var cachedPrices []*models.Price
+	if _, err = r.cache.Get(ctx, cacheKey, &cachedPrices); err == nil {
+		cachedPrices = append(cachedPrices, price)
+		if err = r.cache.Set(ctx, cacheKey, cachedPrices); err != nil {
+			r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.Uint64("productID", price.ProductID))
+		}
 	}
 
 	return nil
@@ -124,7 +134,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 	*price = *models.NewPrice().ConvertFromSQLCPrice(sqlcPrice)
 
 	// 更新緩存
-	if err := r.cache.Set(ctx, cacheKey, price, 30*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, price); err != nil {
 		r.logger.Warn("Failed to cache price", zap.Error(err), zap.Uint64("id", id))
 	}
 
@@ -132,7 +142,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 }
 
 func (r *repository) Update(ctx context.Context, tx pgx.Tx, price *models.Price) error {
-	err := sqlc.New(r.conn).WithTx(tx).UpdatePrice(ctx, sqlc.UpdatePriceParams{
+	if err := sqlc.New(r.conn).WithTx(tx).UpdatePrice(ctx, sqlc.UpdatePriceParams{
 		ID:                     price.ID,
 		ProductID:              price.ProductID,
 		Type:                   sqlc.PriceType(price.Type),
@@ -143,37 +153,44 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, price *models.Price)
 		TrialPeriodDays:        price.TrialPeriodDays,
 		Active:                 price.Active,
 		StripeID:               price.StripeID,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to update price: %w", err)
 	}
 
 	// 更新緩存中的價格信息
 	cacheKey := fmt.Sprintf("price:%d", price.ID)
-	if err := r.cache.Set(ctx, cacheKey, price, 30*time.Minute); err != nil {
+	if err := r.cache.Set(ctx, cacheKey, price); err != nil {
 		r.logger.Warn("Failed to update price in cache", zap.Error(err), zap.Uint64("id", price.ID))
+	}
+	cacheKey = fmt.Sprintf("prices:product:%d", price.ProductID)
+	if err := r.cache.Delete(ctx, cacheKey); err != nil {
+		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.Uint64("productID", price.ProductID))
 	}
 
 	return nil
 }
 
 func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id uint64) error {
-	err := sqlc.New(r.conn).WithTx(tx).DeletePrice(ctx, id)
+	productID, err := sqlc.New(r.conn).WithTx(tx).DeletePrice(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete price: %w", err)
 	}
 
 	// 從緩存中刪除價格
 	cacheKey := fmt.Sprintf("price:%d", id)
-	if err := r.cache.Delete(ctx, cacheKey); err != nil {
+	if err = r.cache.Delete(ctx, cacheKey); err != nil {
+		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.Uint64("id", id))
+	}
+	cacheKey = fmt.Sprintf("prices:product:%d", productID)
+	if err = r.cache.Delete(ctx, cacheKey); err != nil {
 		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.Uint64("id", id))
 	}
 
 	return nil
 }
 
-func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64, limit, offset uint64, activeOnly bool) ([]*models.Price, error) {
-	cacheKey := fmt.Sprintf("prices:product:%d:limit:%d:offset:%d:active:%v", productID, limit, offset, activeOnly)
+func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error) {
+	cacheKey := fmt.Sprintf("prices:product:%d", productID)
 	var cachedPrices []*models.Price
 	found, err := r.cache.Get(ctx, cacheKey, &cachedPrices)
 	if err != nil {
@@ -182,12 +199,7 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64, limi
 		return cachedPrices, nil
 	}
 
-	sqlcPrices, err := sqlc.New(r.conn).WithTx(tx).ListPrices(ctx, sqlc.ListPricesParams{
-		ProductID: productID,
-		Active:    activeOnly,
-		Limit:     int64(limit),
-		Offset:    int64(offset),
-	})
+	sqlcPrices, err := sqlc.New(r.conn).WithTx(tx).ListPrices(ctx, productID)
 	if err != nil {
 		r.logger.Error("error listing prices", zap.Error(err))
 		return nil, err
@@ -206,7 +218,7 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64, limi
 
 		// 更新單個價格的緩存
 		singleCacheKey := fmt.Sprintf("price:%d", price.ID)
-		if err := r.cache.Set(ctx, singleCacheKey, price, 30*time.Minute); err != nil {
+		if err = r.cache.Set(ctx, singleCacheKey, price); err != nil {
 			r.logger.Warn("Failed to cache single price", zap.Error(err), zap.Uint64("id", price.ID))
 		}
 
@@ -214,7 +226,51 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64, limi
 	}
 
 	// 緩存整個列表結果
-	if err := r.cache.Set(ctx, cacheKey, prices, 5*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, prices); err != nil {
+		r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.Uint64("productID", productID))
+	}
+
+	return prices, nil
+}
+
+func (r *repository) ListActive(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error) {
+	cacheKey := fmt.Sprintf("prices:product:%d", productID)
+	var cachedPrices []*models.Price
+	found, err := r.cache.Get(ctx, cacheKey, &cachedPrices)
+	if err != nil {
+		r.logger.Warn("Failed to get prices from cache", zap.Error(err), zap.Uint64("productID", productID))
+	} else if found {
+		return cachedPrices, nil
+	}
+
+	sqlcPrices, err := sqlc.New(r.conn).WithTx(tx).ListActivePrices(ctx, productID)
+	if err != nil {
+		r.logger.Error("error listing prices", zap.Error(err))
+		return nil, err
+	}
+
+	prices := make([]*models.Price, 0, len(sqlcPrices))
+	for _, sqlcPrice := range sqlcPrices {
+		price, release, err := r.getFromPool(ctx)
+		if err != nil {
+			r.logger.Error("Failed to get price from pool", zap.Error(err))
+			continue
+		}
+
+		*price = *models.NewPrice().ConvertFromSQLCPrice(sqlcPrice)
+		prices = append(prices, price)
+
+		// 更新單個價格的緩存
+		singleCacheKey := fmt.Sprintf("price:%d", price.ID)
+		if err := r.cache.Set(ctx, singleCacheKey, price); err != nil {
+			r.logger.Warn("Failed to cache single price", zap.Error(err), zap.Uint64("id", price.ID))
+		}
+
+		release()
+	}
+
+	// 緩存整個列表結果
+	if err = r.cache.Set(ctx, cacheKey, prices); err != nil {
 		r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.Uint64("productID", productID))
 	}
 

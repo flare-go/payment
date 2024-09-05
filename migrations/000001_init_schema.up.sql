@@ -1,10 +1,11 @@
 CREATE TYPE price_type AS ENUM ('ONE_TIME', 'RECURRING');
 CREATE TYPE currency AS ENUM ('USD', 'EUR', 'JPY', 'TWD');
-CREATE TYPE interval_type AS ENUM ('DAY', 'WEEK', 'MONTH', 'YEAR');
+CREATE TYPE interval_type AS ENUM ('day', 'week', 'month', 'year');
 CREATE TYPE subscription_status AS ENUM ('ACTIVE', 'PAST_DUE', 'UNPAID', 'CANCELED', 'INCOMPLETE', 'INCOMPLETE_EXPIRED', 'TRIALING');
 CREATE TYPE invoice_status AS ENUM ('DRAFT', 'OPEN', 'PAID', 'PARTIALLY_PAID', 'UNCOLLECTIBLE', 'VOID');
 CREATE TYPE payment_method_type AS ENUM ('CARD', 'BANK_ACCOUNT');
 CREATE TYPE payment_intent_status AS ENUM ('REQUIRES_PAYMENT_METHOD', 'REQUIRES_CONFIRMATION', 'REQUIRES_ACTION', 'PROCESSING', 'SUCCEEDED', 'CANCELED');
+CREATE TYPE refund_status AS ENUM ('PENDING', 'SUCCEEDED', 'FAILED', 'CANCELED');
 
 CREATE TABLE customers (
                            id SERIAL PRIMARY KEY,
@@ -33,14 +34,12 @@ CREATE TABLE prices (
                         currency currency NOT NULL,
                         unit_amount DECIMAL(10, 2) NOT NULL CHECK (unit_amount > 0),
                         recurring_interval interval_type,
-                        recurring_interval_count INTEGER NOT NULL DEFAULT 1 CHECK (recurring_interval_count > 0),
+                        recurring_interval_count INTEGER NOT NULL DEFAULT 1,
                         trial_period_days INTEGER NOT NULL DEFAULT 0 CHECK (trial_period_days >= 0),
                         active BOOLEAN NOT NULL DEFAULT TRUE,
                         stripe_id VARCHAR(255) NOT NULL UNIQUE,
                         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                        CHECK ((type = 'RECURRING' AND recurring_interval IS NOT NULL AND recurring_interval_count IS NOT NULL) OR
-                               (type = 'ONE_TIME' AND recurring_interval IS NULL AND recurring_interval_count IS NULL))
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE subscriptions (
@@ -67,9 +66,9 @@ CREATE TABLE invoices (
                           subscription_id INTEGER REFERENCES subscriptions(id) ON DELETE SET NULL,
                           status invoice_status NOT NULL,
                           currency currency NOT NULL,
-                          amount_due BIGINT NOT NULL CHECK (amount_due >= 0),
-                          amount_paid BIGINT NOT NULL DEFAULT 0 CHECK (amount_paid >= 0),
-                          amount_remaining BIGINT NOT NULL CHECK (amount_remaining >= 0),
+                          amount_due DECIMAL(10, 2) NOT NULL CHECK (amount_due >= 0),
+                          amount_paid DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (amount_paid >= 0),
+                          amount_remaining DECIMAL(10, 2) NOT NULL CHECK (amount_remaining >= 0),
                           due_date TIMESTAMP WITH TIME ZONE,
                           paid_at TIMESTAMP WITH TIME ZONE,
                           stripe_id VARCHAR(255) NOT NULL UNIQUE,
@@ -82,7 +81,7 @@ CREATE TABLE invoices (
 CREATE TABLE invoice_items (
                                id SERIAL PRIMARY KEY,
                                invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-                               amount BIGINT NOT NULL,
+                               amount DECIMAL(10, 2) NOT NULL,
                                description TEXT,
                                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -109,7 +108,7 @@ CREATE TABLE payment_methods (
 CREATE TABLE payment_intents (
                                  id SERIAL PRIMARY KEY,
                                  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-                                 amount BIGINT NOT NULL CHECK (amount > 0),
+                                 amount DECIMAL(10, 2) NOT NULL CHECK (amount > 0),
                                  currency currency NOT NULL,
                                  status payment_intent_status NOT NULL,
                                  payment_method_id INTEGER REFERENCES payment_methods(id) ON DELETE SET NULL,
@@ -118,6 +117,17 @@ CREATE TABLE payment_intents (
                                  client_secret VARCHAR(255) NOT NULL,
                                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE refunds (
+                         id SERIAL PRIMARY KEY,
+                         payment_intent_id INTEGER NOT NULL REFERENCES payment_intents(id) ON DELETE CASCADE,
+                         amount DECIMAL(10, 2) NOT NULL CHECK (amount > 0),
+                         status refund_status NOT NULL,
+                         reason TEXT,
+                         stripe_id VARCHAR(255) NOT NULL UNIQUE,
+                         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- 創建索引
@@ -130,3 +140,5 @@ CREATE INDEX idx_invoices_stripe_id ON invoices(stripe_id);
 CREATE INDEX idx_payment_methods_stripe_id ON payment_methods(stripe_id);
 CREATE INDEX idx_payment_intents_stripe_id ON payment_intents(stripe_id);
 CREATE INDEX idx_invoice_items_invoice_id ON invoice_items(invoice_id);
+CREATE INDEX idx_refunds_payment_intent_id ON refunds(payment_intent_id);
+CREATE INDEX idx_refunds_stripe_id ON refunds(stripe_id);

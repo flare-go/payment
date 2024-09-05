@@ -3,15 +3,18 @@ package invoice
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
+
 	"goflare.io/ember"
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
-	"reflect"
 )
 
 type Repository interface {
@@ -36,23 +39,24 @@ type repository struct {
 }
 
 func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.MultiCache, poolManager ignite.Manager) (Repository, error) {
-	err := poolManager.RegisterPool(reflect.TypeOf(&models.Invoice{}), ignite.Config[any]{
+
+	if err := poolManager.RegisterPool(reflect.TypeOf(&models.Invoice{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory:     func() (any, error) { return models.NewInvoice(), nil },
 		Reset:       func(obj any) error { *obj.(*models.Invoice) = models.Invoice{}; return nil },
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to register invoice pool: %w", err)
 	}
 
-	err = poolManager.RegisterPool(reflect.TypeOf(&models.InvoiceItem{}), ignite.Config[any]{
+	if err := poolManager.RegisterPool(reflect.TypeOf(&models.InvoiceItem{}), ignite.Config[any]{
 		InitialSize: 20,
 		MaxSize:     200,
+		MaxIdleTime: 10 * time.Minute,
 		Factory:     func() (any, error) { return models.NewInvoiceItem(), nil },
 		Reset:       func(obj any) error { *obj.(*models.InvoiceItem) = models.InvoiceItem{}; return nil },
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to register invoice item pool: %w", err)
 	}
 
@@ -84,7 +88,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, invoice *models.Invo
 		subscriptionID = *invoice.SubscriptionID
 	}
 
-	err := sqlc.New(r.conn).WithTx(tx).CreateInvoice(ctx, sqlc.CreateInvoiceParams{
+	if err := sqlc.New(r.conn).WithTx(tx).CreateInvoice(ctx, sqlc.CreateInvoiceParams{
 		CustomerID:      invoice.CustomerID,
 		SubscriptionID:  subscriptionID,
 		Status:          sqlc.InvoiceStatus(invoice.Status),
@@ -95,8 +99,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, invoice *models.Invo
 		DueDate:         pgtype.Timestamptz{Time: invoice.DueDate, Valid: true},
 		PaidAt:          pgtype.Timestamptz{Time: invoice.PaidAt, Valid: !invoice.PaidAt.IsZero()},
 		StripeID:        invoice.StripeID,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to create invoice: %w", err)
 	}
 
@@ -137,7 +140,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 	*invoice = *models.NewInvoice().ConvertFromSQLCInvoice(sqlcInvoice)
 
 	// 更新緩存
-	if err := r.cache.Set(ctx, cacheKey, invoice); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, invoice); err != nil {
 		r.logger.Warn("Failed to cache invoice", zap.Error(err), zap.Uint64("id", id))
 	}
 

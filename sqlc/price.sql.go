@@ -21,7 +21,7 @@ INSERT INTO prices (
     active,
     stripe_id
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9
+             $1, $2, $3, $4, $5, $6, $7, true, $8
          )
 `
 
@@ -33,7 +33,6 @@ type CreatePriceParams struct {
 	RecurringInterval      NullIntervalType `json:"recurringInterval"`
 	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
 	TrialPeriodDays        int32            `json:"trialPeriodDays"`
-	Active                 bool             `json:"active"`
 	StripeID               string           `json:"stripeId"`
 }
 
@@ -46,21 +45,25 @@ func (q *Queries) CreatePrice(ctx context.Context, arg CreatePriceParams) error 
 		arg.RecurringInterval,
 		arg.RecurringIntervalCount,
 		arg.TrialPeriodDays,
-		arg.Active,
 		arg.StripeID,
 	)
 	return err
 }
 
-const deletePrice = `-- name: DeletePrice :exec
+const deletePrice = `-- name: DeletePrice :one
 
-DELETE FROM prices WHERE id = $1
+UPDATE prices
+SET active = false
+WHERE id = $1
+RETURNING product_id
 `
 
 // RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
-func (q *Queries) DeletePrice(ctx context.Context, id uint64) error {
-	_, err := q.db.Exec(ctx, deletePrice, id)
-	return err
+func (q *Queries) DeletePrice(ctx context.Context, id uint64) (uint64, error) {
+	row := q.db.QueryRow(ctx, deletePrice, id)
+	var product_id uint64
+	err := row.Scan(&product_id)
+	return product_id, err
 }
 
 const getPrice = `-- name: GetPrice :one
@@ -91,28 +94,55 @@ func (q *Queries) GetPrice(ctx context.Context, id uint64) (*Price, error) {
 	return &i, err
 }
 
+const listActivePrices = `-- name: ListActivePrices :many
+SELECT id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at
+FROM prices
+WHERE product_id = $1 AND active = true
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListActivePrices(ctx context.Context, productID uint64) ([]*Price, error) {
+	rows, err := q.db.Query(ctx, listActivePrices, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*Price{}
+	for rows.Next() {
+		var i Price
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductID,
+			&i.Type,
+			&i.Currency,
+			&i.UnitAmount,
+			&i.RecurringInterval,
+			&i.RecurringIntervalCount,
+			&i.TrialPeriodDays,
+			&i.Active,
+			&i.StripeID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPrices = `-- name: ListPrices :many
 SELECT id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at
 FROM prices
-WHERE product_id = $1 AND active = $2
+WHERE product_id = $1
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
 `
 
-type ListPricesParams struct {
-	ProductID uint64 `json:"productId"`
-	Active    bool   `json:"active"`
-	Limit     int64  `json:"limit"`
-	Offset    int64  `json:"offset"`
-}
-
-func (q *Queries) ListPrices(ctx context.Context, arg ListPricesParams) ([]*Price, error) {
-	rows, err := q.db.Query(ctx, listPrices,
-		arg.ProductID,
-		arg.Active,
-		arg.Limit,
-		arg.Offset,
-	)
+func (q *Queries) ListPrices(ctx context.Context, productID uint64) ([]*Price, error) {
+	rows, err := q.db.Query(ctx, listPrices, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +183,8 @@ SET product_id = $2,
     recurring_interval = $6,
     recurring_interval_count = $7,
     trial_period_days = $8,
-    active = $9,
-    stripe_id = $10,
+    stripe_id = $9,
+    active = $10,
     updated_at = NOW()
 WHERE id = $1
 `
@@ -168,8 +198,8 @@ type UpdatePriceParams struct {
 	RecurringInterval      NullIntervalType `json:"recurringInterval"`
 	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
 	TrialPeriodDays        int32            `json:"trialPeriodDays"`
-	Active                 bool             `json:"active"`
 	StripeID               string           `json:"stripeId"`
+	Active                 bool             `json:"active"`
 }
 
 func (q *Queries) UpdatePrice(ctx context.Context, arg UpdatePriceParams) error {
@@ -182,8 +212,8 @@ func (q *Queries) UpdatePrice(ctx context.Context, arg UpdatePriceParams) error 
 		arg.RecurringInterval,
 		arg.RecurringIntervalCount,
 		arg.TrialPeriodDays,
-		arg.Active,
 		arg.StripeID,
+		arg.Active,
 	)
 	return err
 }

@@ -1,8 +1,9 @@
 package models
 
 import (
-	"goflare.io/payment/sqlc"
 	"time"
+
+	"goflare.io/payment/sqlc"
 )
 
 // Customer 代表系統中的客戶

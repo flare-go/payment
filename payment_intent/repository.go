@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/ember"
 	"goflare.io/ember/config"
 	"goflare.io/ignite"
@@ -34,6 +35,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 	err := poolManager.RegisterPool(reflect.TypeOf(&models.PaymentIntent{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory: func() (any, error) {
 			return models.NewPaymentIntent(), nil
 		},

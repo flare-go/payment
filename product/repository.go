@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/ember"
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
@@ -21,7 +22,7 @@ type Repository interface {
 	GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Product, error)
 	Update(ctx context.Context, tx pgx.Tx, product *models.Product) error
 	Delete(ctx context.Context, tx pgx.Tx, id uint64) error
-	List(ctx context.Context, tx pgx.Tx, limit, offset uint64, activeOnly bool) ([]*models.Product, error)
+	List(ctx context.Context, tx pgx.Tx, limit, offset uint64) ([]*models.Product, error)
 }
 
 type repository struct {
@@ -35,6 +36,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 	err := poolManager.RegisterPool(reflect.TypeOf(&models.Product{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory: func() (any, error) {
 			return models.NewProduct(), nil
 		},
@@ -76,12 +78,16 @@ func (r *repository) getFromPool(ctx context.Context) (*models.Product, func(), 
 }
 
 func (r *repository) Create(ctx context.Context, tx pgx.Tx, product *models.Product) error {
-	metadata, err := json.Marshal(product.Metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+	var metadata []byte
+	if product.Metadata != nil {
+		var err error
+		metadata, err = json.Marshal(product.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
 	}
 
-	err = sqlc.New(r.conn).WithTx(tx).CreateProduct(ctx, sqlc.CreateProductParams{
+	sqlcProduct, err := sqlc.New(r.conn).WithTx(tx).CreateProduct(ctx, sqlc.CreateProductParams{
 		Name:        product.Name,
 		Description: &product.Description,
 		Active:      product.Active,
@@ -93,8 +99,11 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, product *models.Prod
 	}
 
 	// 將新創建的產品加入緩存
+	product.ID = sqlcProduct.ID
+	product.CreatedAt = sqlcProduct.CreatedAt.Time
+	product.UpdatedAt = sqlcProduct.UpdatedAt.Time
 	cacheKey := fmt.Sprintf("product:%d", product.ID)
-	if err := r.cache.Set(ctx, cacheKey, product, 30*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, product); err != nil {
 		r.logger.Warn("Failed to cache new product", zap.Error(err), zap.Uint64("id", product.ID))
 	}
 
@@ -103,7 +112,6 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, product *models.Prod
 
 func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Product, error) {
 	cacheKey := fmt.Sprintf("product:%d", id)
-
 	product, release, err := r.getFromPool(ctx)
 	if err != nil {
 		return nil, err
@@ -126,7 +134,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 	*product = *models.NewProduct().ConvertFromSQLCProduct(sqlcProduct)
 
 	// 更新緩存
-	if err := r.cache.Set(ctx, cacheKey, product, 30*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, product); err != nil {
 		r.logger.Warn("Failed to cache product", zap.Error(err), zap.Uint64("id", id))
 	}
 
@@ -134,12 +142,16 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 }
 
 func (r *repository) Update(ctx context.Context, tx pgx.Tx, product *models.Product) error {
-	metadata, err := json.Marshal(product.Metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+	var metadata []byte
+	if product.Metadata != nil {
+		var err error
+		metadata, err = json.Marshal(product.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
 	}
 
-	err = sqlc.New(r.conn).WithTx(tx).UpdateProduct(ctx, sqlc.UpdateProductParams{
+	sqlcProduct, err := sqlc.New(r.conn).WithTx(tx).UpdateProduct(ctx, sqlc.UpdateProductParams{
 		ID:          product.ID,
 		Name:        product.Name,
 		Description: &product.Description,
@@ -152,8 +164,10 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, product *models.Prod
 	}
 
 	// 更新緩存中的產品信息
+	product.CreatedAt = sqlcProduct.CreatedAt.Time
+	product.UpdatedAt = sqlcProduct.UpdatedAt.Time
 	cacheKey := fmt.Sprintf("product:%d", product.ID)
-	if err := r.cache.Set(ctx, cacheKey, product, 30*time.Minute); err != nil {
+	if err := r.cache.Set(ctx, cacheKey, product); err != nil {
 		r.logger.Warn("Failed to update product in cache", zap.Error(err), zap.Uint64("id", product.ID))
 	}
 
@@ -175,8 +189,8 @@ func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id uint64) error {
 	return nil
 }
 
-func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64, activeOnly bool) ([]*models.Product, error) {
-	cacheKey := fmt.Sprintf("products:limit:%d:offset:%d:active:%v", limit, offset, activeOnly)
+func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64) ([]*models.Product, error) {
+	cacheKey := fmt.Sprintf("products:limit:%d:offset:%d", limit, offset)
 	var cachedProducts []*models.Product
 	found, err := r.cache.Get(ctx, cacheKey, &cachedProducts)
 	if err != nil {
@@ -186,7 +200,6 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64, 
 	}
 
 	sqlcProducts, err := sqlc.New(r.conn).WithTx(tx).ListProducts(ctx, sqlc.ListProductsParams{
-		Active: activeOnly,
 		Limit:  int64(limit),
 		Offset: int64(offset),
 	})
@@ -208,7 +221,7 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64, 
 
 		// 更新單個產品的緩存
 		singleCacheKey := fmt.Sprintf("product:%d", product.ID)
-		if err := r.cache.Set(ctx, singleCacheKey, product, 30*time.Minute); err != nil {
+		if err := r.cache.Set(ctx, singleCacheKey, product); err != nil {
 			r.logger.Warn("Failed to cache single product", zap.Error(err), zap.Uint64("id", product.ID))
 		}
 
@@ -216,7 +229,7 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64, 
 	}
 
 	// 緩存整個列表結果
-	if err := r.cache.Set(ctx, cacheKey, products, 5*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, products, 5*time.Minute); err != nil {
 		r.logger.Warn("Failed to cache products list", zap.Error(err))
 	}
 

@@ -3,8 +3,10 @@ package price
 import (
 	"context"
 	"fmt"
+
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 )
@@ -14,7 +16,8 @@ type Service interface {
 	GetByID(ctx context.Context, id uint64) (*models.Price, error)
 	Update(ctx context.Context, price *models.Price) error
 	Delete(ctx context.Context, id uint64) error
-	List(ctx context.Context, productID uint64, limit, offset uint64, activeOnly bool) ([]*models.Price, error)
+	List(ctx context.Context, productID uint64) ([]*models.Price, error)
+	ListActive(ctx context.Context, productID uint64) ([]*models.Price, error)
 }
 
 type service struct {
@@ -91,11 +94,21 @@ func (s *service) Delete(ctx context.Context, id uint64) error {
 	})
 }
 
-func (s *service) List(ctx context.Context, productID uint64, limit, offset uint64, activeOnly bool) ([]*models.Price, error) {
+func (s *service) List(ctx context.Context, productID uint64) ([]*models.Price, error) {
 	var prices []*models.Price
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
-		prices, err = s.repo.List(ctx, tx, productID, limit, offset, activeOnly)
+		prices, err = s.repo.List(ctx, tx, productID)
+		return err
+	})
+	return prices, err
+}
+
+func (s *service) ListActive(ctx context.Context, productID uint64) ([]*models.Price, error) {
+	var prices []*models.Price
+	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		var err error
+		prices, err = s.repo.ListActive(ctx, tx, productID)
 		return err
 	})
 	return prices, err

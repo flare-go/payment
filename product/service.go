@@ -3,8 +3,10 @@ package product
 import (
 	"context"
 	"fmt"
+
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 )
@@ -14,7 +16,7 @@ type Service interface {
 	GetByID(ctx context.Context, id uint64) (*models.Product, error)
 	Update(ctx context.Context, product *models.Product) error
 	Delete(ctx context.Context, id uint64) error
-	List(ctx context.Context, limit, offset uint64, activeOnly bool) ([]*models.Product, error)
+	List(ctx context.Context, limit, offset uint64) ([]*models.Product, error)
 }
 
 type service struct {
@@ -84,11 +86,11 @@ func (s *service) Delete(ctx context.Context, id uint64) error {
 	})
 }
 
-func (s *service) List(ctx context.Context, limit, offset uint64, activeOnly bool) ([]*models.Product, error) {
+func (s *service) List(ctx context.Context, limit, offset uint64) ([]*models.Product, error) {
 	var products []*models.Product
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
-		products, err = s.repo.List(ctx, tx, limit, offset, activeOnly)
+		products, err = s.repo.List(ctx, tx, limit, offset)
 		return err
 	})
 	return products, err

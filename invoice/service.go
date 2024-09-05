@@ -3,12 +3,14 @@ package invoice
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/models/enum"
-	"time"
 )
 
 type Service interface {
@@ -17,7 +19,7 @@ type Service interface {
 	Update(ctx context.Context, invoice *models.Invoice) error
 	List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.Invoice, error)
 	Delete(ctx context.Context, id uint64) error
-	PayInvoice(ctx context.Context, id, amount uint64) error
+	PayInvoice(ctx context.Context, id uint64, amount float64) error
 	CreateInvoiceItem(ctx context.Context, item *models.InvoiceItem) error
 	UpdateInvoiceItem(ctx context.Context, item *models.InvoiceItem) error
 	DeleteInvoiceItem(ctx context.Context, id uint64) error
@@ -89,7 +91,7 @@ func (s *service) Update(ctx context.Context, invoice *models.Invoice) error {
 		existingInvoice.PaidAt = invoice.PaidAt
 		existingInvoice.StripeID = invoice.StripeID
 
-		if err := s.repo.Update(ctx, tx, existingInvoice); err != nil {
+		if err = s.repo.Update(ctx, tx, existingInvoice); err != nil {
 			return fmt.Errorf("failed to update invoice: %w", err)
 		}
 
@@ -119,7 +121,7 @@ func (s *service) Delete(ctx context.Context, id uint64) error {
 	})
 }
 
-func (s *service) PayInvoice(ctx context.Context, id, amount uint64) error {
+func (s *service) PayInvoice(ctx context.Context, id uint64, amount float64) error {
 	return s.transactionManager.ExecuteSerializableTransaction(ctx, func(tx pgx.Tx) error {
 		invoice, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -144,7 +146,7 @@ func (s *service) PayInvoice(ctx context.Context, id, amount uint64) error {
 			invoice.Status = enum.InvoiceStatusPartiallyPaid
 		}
 
-		if err := s.repo.Update(ctx, tx, invoice); err != nil {
+		if err = s.repo.Update(ctx, tx, invoice); err != nil {
 			return fmt.Errorf("failed to update invoice: %w", err)
 		}
 
@@ -164,7 +166,7 @@ func (s *service) CreateInvoiceItem(ctx context.Context, item *models.InvoiceIte
 			return fmt.Errorf("cannot add item to a paid invoice")
 		}
 
-		if err := s.repo.CreateInvoiceItem(ctx, tx, item); err != nil {
+		if err = s.repo.CreateInvoiceItem(ctx, tx, item); err != nil {
 			return fmt.Errorf("failed to create invoice item: %w", err)
 		}
 
@@ -201,14 +203,14 @@ func (s *service) UpdateInvoiceItem(ctx context.Context, item *models.InvoiceIte
 		amountDifference := item.Amount - originalItem.Amount
 
 		// 更新發票項目
-		if err := s.repo.UpdateInvoiceItem(ctx, tx, item); err != nil {
+		if err = s.repo.UpdateInvoiceItem(ctx, tx, item); err != nil {
 			return fmt.Errorf("failed to update invoice item: %w", err)
 		}
 
 		// 更新發票總額
 		invoice.AmountDue += amountDifference
 		invoice.AmountRemaining += amountDifference
-		if err := s.repo.Update(ctx, tx, invoice); err != nil {
+		if err = s.repo.Update(ctx, tx, invoice); err != nil {
 			return fmt.Errorf("failed to update invoice after updating item: %w", err)
 		}
 
@@ -235,7 +237,7 @@ func (s *service) DeleteInvoiceItem(ctx context.Context, id uint64) error {
 		}
 
 		// 刪除發票項目
-		if err := s.repo.DeleteInvoiceItem(ctx, tx, id); err != nil {
+		if err = s.repo.DeleteInvoiceItem(ctx, tx, id); err != nil {
 			return fmt.Errorf("failed to delete invoice item: %w", err)
 		}
 

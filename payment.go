@@ -10,22 +10,20 @@ import (
 )
 
 type Payment interface {
-	CreateCustomer(ctx context.Context, userID uint64, email, name string) (*models.Customer, error) // Interacts with Stripe
+	CreateCustomer(ctx context.Context, userID uint64, email, name string) error // Interacts with Stripe
 	GetCustomer(ctx context.Context, customerID uint64) (*models.Customer, error)
-	UpdateCustomer(ctx context.Context, customer *models.Customer) (*models.Customer, error) // Interacts with Stripe
-	DeleteCustomer(ctx context.Context, customerID uint64) error                             // Interacts with Stripe
+	UpdateCustomerBalance(ctx context.Context, customer *models.Customer) error // Interacts with Stripe
+	DeleteCustomer(ctx context.Context, customerID uint64) error                // Interacts with Stripe
 
-	CreateProduct(ctx context.Context, name, description string, active bool) (*models.Product, error) // Interacts with Stripe
-	GetProduct(ctx context.Context, productID uint64) (*models.Product, error)
-	UpdateProduct(ctx context.Context, product *models.Product) (*models.Product, error) // Interacts with Stripe
-	DeleteProduct(ctx context.Context, productID uint64) error                           // Interacts with Stripe
-	ListProducts(ctx context.Context, active bool) ([]*models.Product, error)
+	CreateProduct(ctx context.Context, req models.Product) error // Interacts with Stripe
+	GetProductWithActivePrices(ctx context.Context, productID uint64) (*models.Product, error)
+	GetProductWithAllPrices(ctx context.Context, productID uint64) (*models.Product, error)
+	UpdateProduct(ctx context.Context, product *models.Product) error // Interacts with Stripe
+	DeleteProduct(ctx context.Context, productID uint64) error        // Interacts with Stripe
+	ListProducts(ctx context.Context) ([]*models.Product, error)
 
-	CreatePrice(ctx context.Context, productID uint64, priceType enum.PriceType, currency enum.Currency, unitAmount float64, interval enum.Interval, intervalCount, trialPeriodDays int32) (*models.Price, error) // Interacts with Stripe
-	GetPrice(ctx context.Context, priceID uint64) (*models.Price, error)
-	UpdatePrice(ctx context.Context, price *models.Price) (*models.Price, error) // Interacts with Stripe
-	DeletePrice(ctx context.Context, priceID uint64) error                       // Interacts with Stripe
-	ListPrices(ctx context.Context, productID uint64, active bool) ([]*models.Price, error)
+	CreatePrice(ctx context.Context, price models.Price) error // Interacts with Stripe
+	DeletePrice(ctx context.Context, priceID uint64) error     // Interacts with Stripe
 
 	CreateSubscription(ctx context.Context, customerID, priceID uint64) (*models.Subscription, error) // Interacts with Stripe
 	GetSubscription(ctx context.Context, subscriptionID uint64) (*models.Subscription, error)
@@ -48,6 +46,11 @@ type Payment interface {
 	GetPaymentIntent(ctx context.Context, paymentIntentID uint64) (*models.PaymentIntent, error)
 	ConfirmPaymentIntent(ctx context.Context, paymentIntentID, paymentMethodID uint64) (*models.PaymentIntent, error) // Interacts with Stripe
 	CancelPaymentIntent(ctx context.Context, paymentIntentID uint64) (*models.PaymentIntent, error)                   // Interacts with Stripe
+
+	CreateRefund(ctx context.Context, paymentIntentID uint64, amount float64, reason string) (*models.Refund, error) // Interacts with Stripe
+	GetRefund(ctx context.Context, refundID uint64) (*models.Refund, error)
+	UpdateRefund(ctx context.Context, refundID uint64, reason string) (*models.Refund, error) // Interacts with Stripe
+	ListRefunds(ctx context.Context, paymentIntentID uint64) ([]*models.Refund, error)
 
 	HandleStripeWebhook(ctx context.Context, payload []byte, signature string) error // Interacts with Stripe
 }

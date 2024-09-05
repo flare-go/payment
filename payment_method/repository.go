@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/ember"
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
-	"reflect"
 )
 
 type Repository interface {
@@ -43,6 +46,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 	err := poolManager.RegisterPool(reflect.TypeOf(&models.PaymentMethod{}), ignite.Config[any]{
 		InitialSize: 10,
 		MaxSize:     100,
+		MaxIdleTime: 10 * time.Minute,
 		Factory: func() (any, error) {
 			return models.NewPaymentMethod(), nil
 		},

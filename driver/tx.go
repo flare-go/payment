@@ -3,9 +3,10 @@ package driver
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
-	"time"
 )
 
 type TransactionManager struct {

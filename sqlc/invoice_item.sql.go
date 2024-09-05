@@ -21,7 +21,7 @@ INSERT INTO invoice_items (
 
 type CreateInvoiceItemParams struct {
 	InvoiceID   uint64  `json:"invoiceId"`
-	Amount      uint64  `json:"amount"`
+	Amount      float64 `json:"amount"`
 	Description *string `json:"description"`
 }
 
@@ -107,7 +107,7 @@ WHERE id = $1
 
 type UpdateInvoiceItemParams struct {
 	ID          uint64  `json:"id"`
-	Amount      uint64  `json:"amount"`
+	Amount      float64 `json:"amount"`
 	Description *string `json:"description"`
 }
 

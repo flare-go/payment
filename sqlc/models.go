@@ -69,10 +69,10 @@ func (e Currency) Valid() bool {
 type IntervalType string
 
 const (
-	IntervalTypeDAY   IntervalType = "DAY"
-	IntervalTypeWEEK  IntervalType = "WEEK"
-	IntervalTypeMONTH IntervalType = "MONTH"
-	IntervalTypeYEAR  IntervalType = "YEAR"
+	IntervalTypeDay   IntervalType = "day"
+	IntervalTypeWeek  IntervalType = "week"
+	IntervalTypeMonth IntervalType = "month"
+	IntervalTypeYear  IntervalType = "year"
 )
 
 func (e *IntervalType) Scan(src interface{}) error {
@@ -112,10 +112,10 @@ func (ns NullIntervalType) Value() (driver.Value, error) {
 
 func (e IntervalType) Valid() bool {
 	switch e {
-	case IntervalTypeDAY,
-		IntervalTypeWEEK,
-		IntervalTypeMONTH,
-		IntervalTypeYEAR:
+	case IntervalTypeDay,
+		IntervalTypeWeek,
+		IntervalTypeMonth,
+		IntervalTypeYear:
 		return true
 	}
 	return false
@@ -341,6 +341,61 @@ func (e PriceType) Valid() bool {
 	return false
 }
 
+type RefundStatus string
+
+const (
+	RefundStatusPENDING   RefundStatus = "PENDING"
+	RefundStatusSUCCEEDED RefundStatus = "SUCCEEDED"
+	RefundStatusFAILED    RefundStatus = "FAILED"
+	RefundStatusCANCELED  RefundStatus = "CANCELED"
+)
+
+func (e *RefundStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RefundStatus(s)
+	case string:
+		*e = RefundStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RefundStatus: %T", src)
+	}
+	return nil
+}
+
+type NullRefundStatus struct {
+	RefundStatus RefundStatus `json:"refundStatus"`
+	Valid        bool         `json:"valid"` // Valid is true if RefundStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRefundStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.RefundStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RefundStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRefundStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RefundStatus), nil
+}
+
+func (e RefundStatus) Valid() bool {
+	switch e {
+	case RefundStatusPENDING,
+		RefundStatusSUCCEEDED,
+		RefundStatusFAILED,
+		RefundStatusCANCELED:
+		return true
+	}
+	return false
+}
+
 type SubscriptionStatus string
 
 const (
@@ -417,9 +472,9 @@ type Invoice struct {
 	SubscriptionID  uint64             `json:"subscriptionId"`
 	Status          InvoiceStatus      `json:"status"`
 	Currency        Currency           `json:"currency"`
-	AmountDue       uint64             `json:"amountDue"`
-	AmountPaid      uint64             `json:"amountPaid"`
-	AmountRemaining uint64             `json:"amountRemaining"`
+	AmountDue       float64            `json:"amountDue"`
+	AmountPaid      float64            `json:"amountPaid"`
+	AmountRemaining float64            `json:"amountRemaining"`
 	DueDate         pgtype.Timestamptz `json:"dueDate"`
 	PaidAt          pgtype.Timestamptz `json:"paidAt"`
 	StripeID        string             `json:"stripeId"`
@@ -430,7 +485,7 @@ type Invoice struct {
 type InvoiceItem struct {
 	ID          uint64             `json:"id"`
 	InvoiceID   uint64             `json:"invoiceId"`
-	Amount      uint64             `json:"amount"`
+	Amount      float64            `json:"amount"`
 	Description *string            `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
@@ -439,7 +494,7 @@ type InvoiceItem struct {
 type PaymentIntent struct {
 	ID               uint64              `json:"id"`
 	CustomerID       uint64              `json:"customerId"`
-	Amount           uint64              `json:"amount"`
+	Amount           float64             `json:"amount"`
 	Currency         Currency            `json:"currency"`
 	Status           PaymentIntentStatus `json:"status"`
 	PaymentMethodID  uint64              `json:"paymentMethodId"`
@@ -490,6 +545,17 @@ type Product struct {
 	StripeID    string             `json:"stripeId"`
 	CreatedAt   pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
+}
+
+type Refund struct {
+	ID              uint64             `json:"id"`
+	PaymentIntentID uint64             `json:"paymentIntentId"`
+	Amount          float64            `json:"amount"`
+	Status          RefundStatus       `json:"status"`
+	Reason          *string            `json:"reason"`
+	StripeID        string             `json:"stripeId"`
+	CreatedAt       pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
 }
 
 type Subscription struct {

@@ -7,9 +7,11 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createProduct = `-- name: CreateProduct :exec
+const createProduct = `-- name: CreateProduct :one
 INSERT INTO products (
     name,
     description,
@@ -19,6 +21,7 @@ INSERT INTO products (
 ) VALUES (
              $1, $2, $3, $4, $5
          )
+RETURNING id, created_at, updated_at
 `
 
 type CreateProductParams struct {
@@ -29,36 +32,40 @@ type CreateProductParams struct {
 	StripeID    string  `json:"stripeId"`
 }
 
-func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) error {
-	_, err := q.db.Exec(ctx, createProduct,
+type CreateProductRow struct {
+	ID        uint64             `json:"id"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+}
+
+func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (*CreateProductRow, error) {
+	row := q.db.QueryRow(ctx, createProduct,
 		arg.Name,
 		arg.Description,
 		arg.Active,
 		arg.Metadata,
 		arg.StripeID,
 	)
-	return err
+	var i CreateProductRow
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
+	return &i, err
 }
 
 const deleteProduct = `-- name: DeleteProduct :exec
-
 DELETE FROM products WHERE id = $1
 `
 
-// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
 func (q *Queries) DeleteProduct(ctx context.Context, id uint64) error {
 	_, err := q.db.Exec(ctx, deleteProduct, id)
 	return err
 }
 
 const getProduct = `-- name: GetProduct :one
-
 SELECT id, name, description, active, metadata, stripe_id, created_at, updated_at
 FROM products
 WHERE id = $1 LIMIT 1
 `
 
-// RETURNING id, name, description, active, metadata, stripe_id, created_at, updated_at;
 func (q *Queries) GetProduct(ctx context.Context, id uint64) (*Product, error) {
 	row := q.db.QueryRow(ctx, getProduct, id)
 	var i Product
@@ -78,19 +85,17 @@ func (q *Queries) GetProduct(ctx context.Context, id uint64) (*Product, error) {
 const listProducts = `-- name: ListProducts :many
 SELECT id, name, description, active, metadata, stripe_id, created_at, updated_at
 FROM products
-WHERE active = $1
 ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
+LIMIT $1 OFFSET $2
 `
 
 type ListProductsParams struct {
-	Active bool  `json:"active"`
 	Limit  int64 `json:"limit"`
 	Offset int64 `json:"offset"`
 }
 
 func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]*Product, error) {
-	rows, err := q.db.Query(ctx, listProducts, arg.Active, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listProducts, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +123,7 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]*
 	return items, nil
 }
 
-const updateProduct = `-- name: UpdateProduct :exec
+const updateProduct = `-- name: UpdateProduct :one
 UPDATE products
 SET name = $2,
     description = $3,
@@ -127,6 +132,7 @@ SET name = $2,
     stripe_id = $6,
     updated_at = NOW()
 WHERE id = $1
+RETURNING created_at, updated_at
 `
 
 type UpdateProductParams struct {
@@ -138,8 +144,13 @@ type UpdateProductParams struct {
 	StripeID    string  `json:"stripeId"`
 }
 
-func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
-	_, err := q.db.Exec(ctx, updateProduct,
+type UpdateProductRow struct {
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+}
+
+func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (*UpdateProductRow, error) {
+	row := q.db.QueryRow(ctx, updateProduct,
 		arg.ID,
 		arg.Name,
 		arg.Description,
@@ -147,5 +158,7 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) er
 		arg.Metadata,
 		arg.StripeID,
 	)
-	return err
+	var i UpdateProductRow
+	err := row.Scan(&i.CreatedAt, &i.UpdatedAt)
+	return &i, err
 }

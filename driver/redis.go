@@ -4,6 +4,8 @@ package driver
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -34,6 +36,7 @@ func ConnectRedis(addr string, password string, db int) (*redis.Client, error) {
 
 	// Test the connection
 	if err := testRedis(client); err != nil {
+		log.Println(fmt.Sprintf("Redis connection error: %s", err))
 		return nil, err
 	}
 

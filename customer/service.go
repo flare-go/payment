@@ -2,9 +2,9 @@ package customer
 
 import (
 	"context"
-	"fmt"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 )
@@ -70,18 +70,9 @@ func (s *service) List(ctx context.Context, limit, offset uint64) ([]*models.Cus
 	return customers, err
 }
 
-func (s *service) UpdateBalance(ctx context.Context, id, amount uint64) error {
+func (s *service) UpdateBalance(ctx context.Context, id, balance uint64) error {
 	return s.transactionManager.ExecuteSerializableTransaction(ctx, func(tx pgx.Tx) error {
-		customer, err := s.repo.GetByID(ctx, tx, id)
-		if err != nil {
-			return fmt.Errorf("failed to get customer: %w", err)
-		}
 
-		newBalance := customer.Balance + int64(amount)
-		if newBalance < 0 {
-			return fmt.Errorf("insufficient balance")
-		}
-
-		return s.repo.UpdateBalance(ctx, tx, id, uint64(newBalance))
+		return s.repo.UpdateBalance(ctx, tx, id, balance)
 	})
 }
