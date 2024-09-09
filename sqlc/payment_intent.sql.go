@@ -11,13 +11,13 @@ import (
 
 const createPaymentIntent = `-- name: CreatePaymentIntent :exec
 INSERT INTO payment_intents (
+    id,
     customer_id,
     amount,
     currency,
     status,
     payment_method_id,
     setup_future_usage,
-    stripe_id,
     client_secret
 ) VALUES (
              $1, $2, $3, $4, $5, $6, $7, $8
@@ -25,25 +25,25 @@ INSERT INTO payment_intents (
 `
 
 type CreatePaymentIntentParams struct {
-	CustomerID       uint64              `json:"customerId"`
+	ID               string              `json:"id"`
+	CustomerID       string              `json:"customerId"`
 	Amount           float64             `json:"amount"`
 	Currency         Currency            `json:"currency"`
 	Status           PaymentIntentStatus `json:"status"`
-	PaymentMethodID  uint64              `json:"paymentMethodId"`
-	SetupFutureUsage string              `json:"setupFutureUsage"`
-	StripeID         string              `json:"stripeId"`
+	PaymentMethodID  *string             `json:"paymentMethodId"`
+	SetupFutureUsage *string             `json:"setupFutureUsage"`
 	ClientSecret     string              `json:"clientSecret"`
 }
 
 func (q *Queries) CreatePaymentIntent(ctx context.Context, arg CreatePaymentIntentParams) error {
 	_, err := q.db.Exec(ctx, createPaymentIntent,
+		arg.ID,
 		arg.CustomerID,
 		arg.Amount,
 		arg.Currency,
 		arg.Status,
 		arg.PaymentMethodID,
 		arg.SetupFutureUsage,
-		arg.StripeID,
 		arg.ClientSecret,
 	)
 	return err
@@ -51,13 +51,13 @@ func (q *Queries) CreatePaymentIntent(ctx context.Context, arg CreatePaymentInte
 
 const getPaymentIntent = `-- name: GetPaymentIntent :one
 
-SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at
+SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at
 FROM payment_intents
 WHERE id = $1 LIMIT 1
 `
 
 // RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
-func (q *Queries) GetPaymentIntent(ctx context.Context, id uint64) (*PaymentIntent, error) {
+func (q *Queries) GetPaymentIntent(ctx context.Context, id string) (*PaymentIntent, error) {
 	row := q.db.QueryRow(ctx, getPaymentIntent, id)
 	var i PaymentIntent
 	err := row.Scan(
@@ -68,7 +68,6 @@ func (q *Queries) GetPaymentIntent(ctx context.Context, id uint64) (*PaymentInte
 		&i.Status,
 		&i.PaymentMethodID,
 		&i.SetupFutureUsage,
-		&i.StripeID,
 		&i.ClientSecret,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -78,22 +77,20 @@ func (q *Queries) GetPaymentIntent(ctx context.Context, id uint64) (*PaymentInte
 
 const listPaymentIntents = `-- name: ListPaymentIntents :many
 
-SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at
+SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at
 FROM payment_intents
-WHERE customer_id = $1
 ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
+LIMIT $1 OFFSET $2
 `
 
 type ListPaymentIntentsParams struct {
-	CustomerID uint64 `json:"customerId"`
-	Limit      int64  `json:"limit"`
-	Offset     int64  `json:"offset"`
+	Limit  int64 `json:"limit"`
+	Offset int64 `json:"offset"`
 }
 
 // RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
 func (q *Queries) ListPaymentIntents(ctx context.Context, arg ListPaymentIntentsParams) ([]*PaymentIntent, error) {
-	rows, err := q.db.Query(ctx, listPaymentIntents, arg.CustomerID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listPaymentIntents, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +106,51 @@ func (q *Queries) ListPaymentIntents(ctx context.Context, arg ListPaymentIntents
 			&i.Status,
 			&i.PaymentMethodID,
 			&i.SetupFutureUsage,
-			&i.StripeID,
+			&i.ClientSecret,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPaymentIntentsByCustomer = `-- name: ListPaymentIntentsByCustomer :many
+SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at
+FROM payment_intents
+WHERE customer_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListPaymentIntentsByCustomerParams struct {
+	CustomerID string `json:"customerId"`
+	Limit      int64  `json:"limit"`
+	Offset     int64  `json:"offset"`
+}
+
+func (q *Queries) ListPaymentIntentsByCustomer(ctx context.Context, arg ListPaymentIntentsByCustomerParams) ([]*PaymentIntent, error) {
+	rows, err := q.db.Query(ctx, listPaymentIntentsByCustomer, arg.CustomerID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*PaymentIntent{}
+	for rows.Next() {
+		var i PaymentIntent
+		if err := rows.Scan(
+			&i.ID,
+			&i.CustomerID,
+			&i.Amount,
+			&i.Currency,
+			&i.Status,
+			&i.PaymentMethodID,
+			&i.SetupFutureUsage,
 			&i.ClientSecret,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -129,18 +170,16 @@ UPDATE payment_intents
 SET status = $2,
     payment_method_id = $3,
     setup_future_usage = $4,
-    stripe_id = $5,
-    client_secret = $6,
+    client_secret = $5,
     updated_at = NOW()
 WHERE id = $1
 `
 
 type UpdatePaymentIntentParams struct {
-	ID               uint64              `json:"id"`
+	ID               string              `json:"id"`
 	Status           PaymentIntentStatus `json:"status"`
-	PaymentMethodID  uint64              `json:"paymentMethodId"`
-	SetupFutureUsage string              `json:"setupFutureUsage"`
-	StripeID         string              `json:"stripeId"`
+	PaymentMethodID  *string             `json:"paymentMethodId"`
+	SetupFutureUsage *string             `json:"setupFutureUsage"`
 	ClientSecret     string              `json:"clientSecret"`
 }
 
@@ -150,7 +189,48 @@ func (q *Queries) UpdatePaymentIntent(ctx context.Context, arg UpdatePaymentInte
 		arg.Status,
 		arg.PaymentMethodID,
 		arg.SetupFutureUsage,
-		arg.StripeID,
+		arg.ClientSecret,
+	)
+	return err
+}
+
+const upsertPaymentIntent = `-- name: UpsertPaymentIntent :exec
+INSERT INTO payment_intents (
+    id,customer_id, amount, currency, status, payment_method_id, setup_future_usage,client_secret
+) VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8
+         )
+ON CONFLICT (id) DO UPDATE SET
+                                      customer_id = EXCLUDED.customer_id,
+                                      amount = EXCLUDED.amount,
+                                      currency = EXCLUDED.currency,
+                                      status = EXCLUDED.status,
+                                      payment_method_id = EXCLUDED.payment_method_id,
+                                      setup_future_usage = EXCLUDED.setup_future_usage,
+                                      client_secret = EXCLUDED.client_secret,
+                                      updated_at = NOW()
+`
+
+type UpsertPaymentIntentParams struct {
+	ID               string              `json:"id"`
+	CustomerID       string              `json:"customerId"`
+	Amount           float64             `json:"amount"`
+	Currency         Currency            `json:"currency"`
+	Status           PaymentIntentStatus `json:"status"`
+	PaymentMethodID  *string             `json:"paymentMethodId"`
+	SetupFutureUsage *string             `json:"setupFutureUsage"`
+	ClientSecret     string              `json:"clientSecret"`
+}
+
+func (q *Queries) UpsertPaymentIntent(ctx context.Context, arg UpsertPaymentIntentParams) error {
+	_, err := q.db.Exec(ctx, upsertPaymentIntent,
+		arg.ID,
+		arg.CustomerID,
+		arg.Amount,
+		arg.Currency,
+		arg.Status,
+		arg.PaymentMethodID,
+		arg.SetupFutureUsage,
 		arg.ClientSecret,
 	)
 	return err

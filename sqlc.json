@@ -23,19 +23,7 @@
         "sql_package": "pgx/v5",
         "overrides": [
           {
-            "column": "*.id",
-            "go_type": "uint64"
-          },
-          {
             "column": "*.user_id",
-            "go_type": "uint64"
-          },
-          {
-            "column": "*.product_id",
-            "go_type": "uint64"
-          },
-          {
-            "column": "*.permission_id",
             "go_type": "uint64"
           },
           {
@@ -43,28 +31,8 @@
             "go_type": "float64"
           },
           {
-            "column": "*.customer_id",
-            "go_type": "uint64"
-          },
-          {
-            "column": "*.subscription_id",
-            "go_type": "uint64"
-          },
-          {
-            "column": "*.invoice_id",
-            "go_type": "uint64"
-          },
-          {
-            "column": "*.payment_method_id",
-            "go_type": "uint64"
-          },
-          {
             "column": "*.amount",
             "go_type": "float64"
-          },
-          {
-            "column": "*.price_id",
-            "go_type": "uint64"
           },
           {
             "column": "*.amount_due",
@@ -79,8 +47,8 @@
             "go_type": "float64"
           },
           {
-            "column": "*.payment_intent_id",
-            "go_type": "uint64"
+            "column": "*.percent_off",
+            "go_type": "float64"
           }
         ]
       }

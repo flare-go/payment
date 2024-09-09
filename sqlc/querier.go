@@ -10,8 +10,13 @@ import (
 
 type Querier interface {
 	// RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at;
-	CancelSubscription(ctx context.Context, id uint64) error
+	CancelSubscription(ctx context.Context, id string) error
+	CloseDispute(ctx context.Context, arg CloseDisputeParams) error
+	CreateCoupon(ctx context.Context, arg CreateCouponParams) (*Coupon, error)
 	CreateCustomer(ctx context.Context, arg CreateCustomerParams) (*CreateCustomerRow, error)
+	CreateDiscount(ctx context.Context, arg CreateDiscountParams) (*Discount, error)
+	CreateDispute(ctx context.Context, arg CreateDisputeParams) error
+	CreateEvent(ctx context.Context, arg CreateEventParams) error
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) error
 	CreateInvoiceItem(ctx context.Context, arg CreateInvoiceItemParams) error
 	CreatePaymentIntent(ctx context.Context, arg CreatePaymentIntentParams) error
@@ -20,51 +25,65 @@ type Querier interface {
 	CreateProduct(ctx context.Context, arg CreateProductParams) (*CreateProductRow, error)
 	CreateRefund(ctx context.Context, arg CreateRefundParams) error
 	CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) error
-	DeleteCustomer(ctx context.Context, id uint64) error
-	DeleteInvoice(ctx context.Context, id uint64) error
+	DeleteCoupon(ctx context.Context, id string) error
+	DeleteCustomer(ctx context.Context, id string) error
+	DeleteDiscount(ctx context.Context, id string) error
+	DeleteDispute(ctx context.Context, id string) error
+	DeleteInvoice(ctx context.Context, id string) error
 	// RETURNING id, invoice_id, amount, description, created_at, updated_at;
-	DeleteInvoiceItem(ctx context.Context, id uint64) error
+	DeleteInvoiceItem(ctx context.Context, id string) error
 	// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
-	DeletePaymentMethod(ctx context.Context, id uint64) error
+	DeletePaymentMethod(ctx context.Context, id string) error
 	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
-	DeletePrice(ctx context.Context, id uint64) (uint64, error)
-	DeleteProduct(ctx context.Context, id uint64) error
-	DeleteRefund(ctx context.Context, id uint64) error
-	GetCustomer(ctx context.Context, dollar_1 *int32) (*GetCustomerRow, error)
+	DeletePrice(ctx context.Context, id string) (string, error)
+	DeleteProduct(ctx context.Context, id string) error
+	DeleteRefund(ctx context.Context, id string) error
+	DeleteSubscription(ctx context.Context, id string) error
+	GetCouponByID(ctx context.Context, id string) (*Coupon, error)
+	GetCustomer(ctx context.Context, dollar_1 *string) (*GetCustomerRow, error)
+	GetDiscountByID(ctx context.Context, id string) (*Discount, error)
+	GetDisputeByID(ctx context.Context, id string) (*Dispute, error)
+	GetEventByID(ctx context.Context, id string) (*Event, error)
 	GetExpiringSubscriptions(ctx context.Context, arg GetExpiringSubscriptionsParams) ([]*Subscription, error)
 	// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
-	GetInvoice(ctx context.Context, id uint64) (*Invoice, error)
+	GetInvoice(ctx context.Context, id string) (*Invoice, error)
 	// RETURNING id, invoice_id, amount, description, created_at, updated_at;
-	GetInvoiceItem(ctx context.Context, id uint64) (*InvoiceItem, error)
+	GetInvoiceItem(ctx context.Context, id string) (*InvoiceItem, error)
 	// RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
-	GetPaymentIntent(ctx context.Context, id uint64) (*PaymentIntent, error)
+	GetPaymentIntent(ctx context.Context, id string) (*PaymentIntent, error)
 	// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
-	GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMethod, error)
+	GetPaymentMethod(ctx context.Context, id string) (*PaymentMethod, error)
 	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
-	GetPrice(ctx context.Context, id uint64) (*Price, error)
-	GetProduct(ctx context.Context, id uint64) (*Product, error)
-	GetRefund(ctx context.Context, id uint64) (*Refund, error)
+	GetPrice(ctx context.Context, id string) (*Price, error)
+	GetProduct(ctx context.Context, id string) (*Product, error)
+	GetRefund(ctx context.Context, id string) (*Refund, error)
 	// RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at;
-	GetSubscription(ctx context.Context, id uint64) (*Subscription, error)
-	ListActivePrices(ctx context.Context, productID uint64) ([]*Price, error)
-	ListByPaymentIntentID(ctx context.Context, paymentIntentID uint64) ([]*Refund, error)
+	GetSubscription(ctx context.Context, id string) (*Subscription, error)
+	ListActivePrices(ctx context.Context, productID string) ([]*Price, error)
+	ListByChargeID(ctx context.Context, chargeID string) ([]*Refund, error)
+	ListCoupons(ctx context.Context, arg ListCouponsParams) ([]*Coupon, error)
 	ListCustomers(ctx context.Context, arg ListCustomersParams) ([]*ListCustomersRow, error)
-	ListInvoiceItems(ctx context.Context, invoiceID uint64) ([]*InvoiceItem, error)
+	ListDiscounts(ctx context.Context, arg ListDiscountsParams) ([]*Discount, error)
+	ListDiscountsByCustomerID(ctx context.Context, arg ListDiscountsByCustomerIDParams) ([]*Discount, error)
+	ListInvoiceItems(ctx context.Context, invoiceID string) ([]*InvoiceItem, error)
+	ListInvoices(ctx context.Context, id string) ([]*Invoice, error)
 	// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
-	ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]*Invoice, error)
-	ListInvoicesByStripeID(ctx context.Context, stripeID string) ([]*Invoice, error)
+	ListInvoicesByCustomerID(ctx context.Context, arg ListInvoicesByCustomerIDParams) ([]*Invoice, error)
 	// RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
 	ListPaymentIntents(ctx context.Context, arg ListPaymentIntentsParams) ([]*PaymentIntent, error)
+	ListPaymentIntentsByCustomer(ctx context.Context, arg ListPaymentIntentsByCustomerParams) ([]*PaymentIntent, error)
 	ListPaymentMethods(ctx context.Context, arg ListPaymentMethodsParams) ([]*PaymentMethod, error)
-	ListPrices(ctx context.Context, productID uint64) ([]*Price, error)
+	ListPrices(ctx context.Context, productID string) ([]*Price, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]*Product, error)
 	ListRefunds(ctx context.Context, arg ListRefundsParams) ([]*Refund, error)
-	ListRefundsByStripeID(ctx context.Context, stripeID string) ([]*Refund, error)
 	// RETURNING id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, stripe_id, created_at, updated_at;
 	ListSubscriptions(ctx context.Context, arg ListSubscriptionsParams) ([]*Subscription, error)
-	ListSubscriptionsByStripeID(ctx context.Context, stripeID string) ([]*Subscription, error)
+	MarkEventAsProcessed(ctx context.Context, arg MarkEventAsProcessedParams) error
+	UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (*Coupon, error)
 	UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) error
 	UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerBalanceParams) error
+	UpdateDiscount(ctx context.Context, arg UpdateDiscountParams) (*Discount, error)
+	UpdateDispute(ctx context.Context, arg UpdateDisputeParams) error
 	UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) error
 	UpdateInvoiceItem(ctx context.Context, arg UpdateInvoiceItemParams) error
 	UpdatePaymentIntent(ctx context.Context, arg UpdatePaymentIntentParams) error
@@ -73,6 +92,18 @@ type Querier interface {
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (*UpdateProductRow, error)
 	UpdateRefund(ctx context.Context, arg UpdateRefundParams) error
 	UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) error
+	UpsertCharge(ctx context.Context, arg UpsertChargeParams) error
+	UpsertCoupon(ctx context.Context, arg UpsertCouponParams) error
+	UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) error
+	UpsertDiscount(ctx context.Context, arg UpsertDiscountParams) error
+	UpsertDispute(ctx context.Context, arg UpsertDisputeParams) error
+	UpsertInvoice(ctx context.Context, arg UpsertInvoiceParams) error
+	UpsertPaymentIntent(ctx context.Context, arg UpsertPaymentIntentParams) error
+	UpsertPaymentMethod(ctx context.Context, arg UpsertPaymentMethodParams) error
+	UpsertPrice(ctx context.Context, arg UpsertPriceParams) error
+	UpsertProduct(ctx context.Context, arg UpsertProductParams) error
+	UpsertRefund(ctx context.Context, arg UpsertRefundParams) error
+	UpsertSubscription(ctx context.Context, arg UpsertSubscriptionParams) error
 }
 
 var _ Querier = (*Queries)(nil)

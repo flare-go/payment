@@ -10,9 +10,9 @@ import (
 // Subscription 代表客戶的訂閱
 // Subscription represents a customer's subscription
 type Subscription struct {
-	ID                 uint64                  `json:"id"`
-	CustomerID         uint64                  `json:"customer_id"`
-	PriceID            uint64                  `json:"price_id"`
+	ID                 string                  `json:"id"`
+	CustomerID         string                  `json:"customer_id"`
+	PriceID            string                  `json:"price_id"`
 	Status             enum.SubscriptionStatus `json:"status"`
 	CurrentPeriodStart time.Time               `json:"current_period_start"`
 	CurrentPeriodEnd   time.Time               `json:"current_period_end"`
@@ -20,9 +20,23 @@ type Subscription struct {
 	CancelAtPeriodEnd  bool                    `json:"cancel_at_period_end"`
 	TrialStart         *time.Time              `json:"trial_start,omitempty"`
 	TrialEnd           *time.Time              `json:"trial_end,omitempty"`
-	StripeID           string                  `json:"stripe_id"`
 	CreatedAt          time.Time               `json:"created_at"`
 	UpdatedAt          time.Time               `json:"updated_at"`
+}
+
+type PartialSubscription struct {
+	ID                 string
+	CustomerID         *string
+	PriceID            *string
+	Status             *enum.SubscriptionStatus
+	CurrentPeriodStart *time.Time
+	CurrentPeriodEnd   *time.Time
+	CanceledAt         *time.Time
+	CancelAtPeriodEnd  *bool
+	TrialStart         *time.Time
+	TrialEnd           *time.Time
+	CreatedAt          *time.Time
+	UpdatedAt          *time.Time
 }
 
 func NewSubscription() *Subscription {
@@ -32,8 +46,7 @@ func NewSubscription() *Subscription {
 func (s *Subscription) ConvertFromSQLCSubscription(sqlcSubscription any) *Subscription {
 
 	var (
-		id, customerID, priceID uint64
-		stripeID                string
+		id, customerID, priceID string
 		cancelAtPeriodEnd       bool
 		currentPeriodStart,
 		currentPeriodEnd,
@@ -49,7 +62,6 @@ func (s *Subscription) ConvertFromSQLCSubscription(sqlcSubscription any) *Subscr
 		id = sp.ID
 		customerID = sp.CustomerID
 		priceID = sp.PriceID
-		stripeID = sp.StripeID
 		cancelAtPeriodEnd = sp.CancelAtPeriodEnd
 		currentPeriodStart = sp.CurrentPeriodStart.Time
 		currentPeriodEnd = sp.CurrentPeriodEnd.Time
@@ -65,7 +77,6 @@ func (s *Subscription) ConvertFromSQLCSubscription(sqlcSubscription any) *Subscr
 	s.ID = id
 	s.CustomerID = customerID
 	s.PriceID = priceID
-	s.StripeID = stripeID
 	s.CancelAtPeriodEnd = cancelAtPeriodEnd
 	s.CurrentPeriodStart = currentPeriodStart
 	s.CurrentPeriodEnd = currentPeriodEnd

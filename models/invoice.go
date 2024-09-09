@@ -10,20 +10,34 @@ import (
 // Invoice 代表訂閱或一次性購買的發票
 // Invoice represents an invoice for a subscription or one-time purchase
 type Invoice struct {
-	ID              uint64             `json:"id"`
-	CustomerID      uint64             `json:"customer_id"`
-	SubscriptionID  *uint64            `json:"subscription_id,omitempty"`
+	ID              string             `json:"id"`
+	CustomerID      string             `json:"customer_id"`
+	SubscriptionID  *string            `json:"subscription_id,omitempty"`
 	Status          enum.InvoiceStatus `json:"status"`
 	Currency        enum.Currency      `json:"currency"`
 	AmountDue       float64            `json:"amount_due"`
 	AmountPaid      float64            `json:"amount_paid"`
 	AmountRemaining float64            `json:"amount_remaining"`
-	StripeID        string             `json:"stripe_id"`
 	InvoiceItems    []*InvoiceItem     `json:"invoice_items"`
 	DueDate         time.Time          `json:"due_date"`
 	PaidAt          time.Time          `json:"paid_at"`
 	CreatedAt       time.Time          `json:"created_at"`
 	UpdatedAt       time.Time          `json:"updated_at"`
+}
+
+type PartialInvoice struct {
+	ID              string
+	CustomerID      *string
+	SubscriptionID  *string
+	Status          *enum.InvoiceStatus
+	Currency        *enum.Currency
+	AmountDue       *float64
+	AmountPaid      *float64
+	AmountRemaining *float64
+	DueDate         *time.Time
+	PaidAt          *time.Time
+	CreatedAt       *time.Time
+	UpdatedAt       *time.Time
 }
 
 func NewInvoice() *Invoice {
@@ -33,8 +47,7 @@ func NewInvoice() *Invoice {
 func (i *Invoice) ConvertFromSQLCInvoice(sqlcInvoice any) *Invoice {
 
 	var (
-		stripeID                               string
-		id, customerID, subscriptionID         uint64
+		id, customerID, subscriptionID         string
 		amountDue, amountPaid, amountRemaining float64
 		status                                 enum.InvoiceStatus
 		currency                               enum.Currency
@@ -43,14 +56,15 @@ func (i *Invoice) ConvertFromSQLCInvoice(sqlcInvoice any) *Invoice {
 
 	switch sp := sqlcInvoice.(type) {
 	case *sqlc.Invoice:
+		if sp.SubscriptionID != nil {
+			subscriptionID = *sp.SubscriptionID
+		}
 		id = sp.ID
 		customerID = sp.CustomerID
-		subscriptionID = sp.SubscriptionID
 		amountDue = sp.AmountDue
 		amountPaid = sp.AmountPaid
 		amountRemaining = sp.AmountRemaining
 		currency = enum.Currency(sp.Currency)
-		stripeID = sp.StripeID
 		status = enum.InvoiceStatus(sp.Status)
 		dueDate = sp.DueDate.Time
 		paidAt = sp.PaidAt.Time
@@ -68,7 +82,6 @@ func (i *Invoice) ConvertFromSQLCInvoice(sqlcInvoice any) *Invoice {
 	i.AmountRemaining = amountRemaining
 	i.Currency = currency
 	i.Status = status
-	i.StripeID = stripeID
 	i.DueDate = dueDate
 	i.PaidAt = paidAt
 	i.CreatedAt = createdAt

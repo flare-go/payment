@@ -12,11 +12,11 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, refund *models.Refund) error
-	GetByID(ctx context.Context, id uint64) (*models.Refund, error)
-	UpdateStatus(ctx context.Context, id uint64, status enum.RefundStatus, reason string) error
-	List(ctx context.Context, paymentIntentID uint64, limit, offset uint64) ([]*models.Refund, error)
-	ListByStripeID(ctx context.Context, stripeID string) ([]*models.Refund, error)
-	ListByPaymentIntentID(ctx context.Context, paymentIntentID uint64) ([]*models.Refund, error)
+	GetByID(ctx context.Context, id string) (*models.Refund, error)
+	UpdateStatus(ctx context.Context, id string, status enum.RefundStatus, reason string) error
+	List(ctx context.Context, chargeID string, limit, offset uint64) ([]*models.Refund, error)
+	ListByChargeID(ctx context.Context, chargeID string) ([]*models.Refund, error)
+	Upsert(ctx context.Context, refund *models.PartialRefund) error
 }
 
 type service struct {
@@ -42,20 +42,19 @@ func (s *service) Create(ctx context.Context, refund *models.Refund) error {
 	return nil
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.Refund, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.Refund, error) {
 	var refund *models.Refund
-	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+	if err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
 		refund, err = s.repo.GetByID(ctx, tx, id)
 		return err
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to get refund: %w", err)
 	}
 	return refund, nil
 }
 
-func (s *service) UpdateStatus(ctx context.Context, id uint64, status enum.RefundStatus, reason string) error {
+func (s *service) UpdateStatus(ctx context.Context, id string, status enum.RefundStatus, reason string) error {
 	var refund *models.Refund
 	if err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -72,11 +71,11 @@ func (s *service) UpdateStatus(ctx context.Context, id uint64, status enum.Refun
 	return nil
 }
 
-func (s *service) List(ctx context.Context, paymentIntentID uint64, limit, offset uint64) ([]*models.Refund, error) {
+func (s *service) List(ctx context.Context, chargeID string, limit, offset uint64) ([]*models.Refund, error) {
 	var refunds []*models.Refund
 	if err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
-		refunds, err = s.repo.List(ctx, tx, paymentIntentID, limit, offset)
+		refunds, err = s.repo.List(ctx, tx, chargeID, limit, offset)
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("failed to list refunds: %w", err)
@@ -84,11 +83,12 @@ func (s *service) List(ctx context.Context, paymentIntentID uint64, limit, offse
 	return refunds, nil
 }
 
-func (s *service) ListByStripeID(ctx context.Context, stripeID string) ([]*models.Refund, error) {
+func (s *service) ListByChargeID(ctx context.Context, chargeID string) ([]*models.Refund, error) {
+
 	var refunds []*models.Refund
 	if err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
-		refunds, err = s.repo.ListByStripeID(ctx, stripeID)
+		refunds, err = s.repo.ListByChargeID(ctx, chargeID)
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("failed to list refunds: %w", err)
@@ -96,15 +96,8 @@ func (s *service) ListByStripeID(ctx context.Context, stripeID string) ([]*model
 	return refunds, nil
 }
 
-func (s *service) ListByPaymentIntentID(ctx context.Context, paymentIntentID uint64) ([]*models.Refund, error) {
-
-	var refunds []*models.Refund
-	if err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
-		var err error
-		refunds, err = s.repo.ListByPaymentIntentID(ctx, paymentIntentID)
-		return err
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list refunds: %w", err)
-	}
-	return refunds, nil
+func (s *service) Upsert(ctx context.Context, refund *models.PartialRefund) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, refund)
+	})
 }

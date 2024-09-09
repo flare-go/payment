@@ -8,9 +8,14 @@ package main
 
 import (
 	"goflare.io/payment"
+	"goflare.io/payment/charge"
 	"goflare.io/payment/config"
+	"goflare.io/payment/coupon"
 	"goflare.io/payment/customer"
+	"goflare.io/payment/discount"
+	"goflare.io/payment/disputes"
 	"goflare.io/payment/driver"
+	"goflare.io/payment/event"
 	"goflare.io/payment/handlers"
 	"goflare.io/payment/invoice"
 	"goflare.io/payment/payment_intent"
@@ -45,6 +50,19 @@ func InitializeAuthService() (*server.Server, error) {
 	}
 	transactionManager := driver.NewTransactionManager(postgresPool, logger)
 	service := customer.NewService(repository, transactionManager, logger)
+	chargeRepository := charge.NewRepository(postgresPool)
+	chargeService := charge.NewService(chargeRepository, transactionManager)
+	couponRepository := coupon.NewRepository(postgresPool)
+	couponService := coupon.NewService(couponRepository, transactionManager)
+	discountRepository := discount.NewRepository(postgresPool)
+	discountService := discount.NewService(discountRepository, transactionManager)
+	disputesRepository := disputes.NewRepository(postgresPool, logger)
+	disputesService := disputes.NewService(disputesRepository, transactionManager, logger)
+	eventRepository, err := event.NewRepository(postgresPool, logger, multiCache, manager)
+	if err != nil {
+		return nil, err
+	}
+	eventService := event.NewService(eventRepository)
 	productRepository, err := product.NewRepository(postgresPool, logger, multiCache, manager)
 	if err != nil {
 		return nil, err
@@ -80,10 +98,11 @@ func InitializeAuthService() (*server.Server, error) {
 		return nil, err
 	}
 	refundService := refund.NewService(refundRepository, transactionManager, logger)
-	paymentPayment := payment.NewStripePayment(configConfig, service, productService, priceService, subscriptionService, invoiceService, payment_methodService, payment_intentService, refundService)
+	paymentPayment := payment.NewStripePayment(configConfig, service, chargeService, couponService, discountService, disputesService, eventService, productService, priceService, subscriptionService, invoiceService, payment_methodService, payment_intentService, refundService, logger)
 	customerHandler := handlers.NewCustomerHandler(paymentPayment)
 	productHandler := handlers.NewProductHandler(paymentPayment, logger)
 	priceHandler := handlers.NewPriceHandler(paymentPayment, logger)
-	serverServer := server.NewServer(customerHandler, productHandler, priceHandler)
+	paymentIntentHandler := handlers.NewPaymentIntentHandler(paymentPayment)
+	serverServer := server.NewServer(customerHandler, productHandler, priceHandler, paymentIntentHandler)
 	return serverServer, nil
 }

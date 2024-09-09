@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,11 +19,12 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, tx pgx.Tx, price *models.Price) error
-	GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Price, error)
+	GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Price, error)
 	Update(ctx context.Context, tx pgx.Tx, price *models.Price) error
-	Delete(ctx context.Context, tx pgx.Tx, id uint64) error
-	List(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error)
-	ListActive(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error)
+	Delete(ctx context.Context, tx pgx.Tx, id string) error
+	List(ctx context.Context, tx pgx.Tx, productID string) ([]*models.Price, error)
+	ListActive(ctx context.Context, tx pgx.Tx, productID string) ([]*models.Price, error)
+	Upsert(ctx context.Context, tx pgx.Tx, price *models.PartialPrice) error
 }
 
 type repository struct {
@@ -78,7 +80,8 @@ func (r *repository) getFromPool(ctx context.Context) (*models.Price, func(), er
 }
 
 func (r *repository) Create(ctx context.Context, tx pgx.Tx, price *models.Price) error {
-	err := sqlc.New(r.conn).WithTx(tx).CreatePrice(ctx, sqlc.CreatePriceParams{
+	if err := sqlc.New(r.conn).WithTx(tx).CreatePrice(ctx, sqlc.CreatePriceParams{
+		ID:                     price.ID,
 		ProductID:              price.ProductID,
 		Type:                   sqlc.PriceType(price.Type),
 		Currency:               sqlc.Currency(price.Currency),
@@ -86,31 +89,29 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, price *models.Price)
 		RecurringInterval:      sqlc.NullIntervalType{IntervalType: sqlc.IntervalType(price.RecurringInterval), Valid: price.RecurringInterval != ""},
 		RecurringIntervalCount: price.RecurringIntervalCount,
 		TrialPeriodDays:        price.TrialPeriodDays,
-		StripeID:               price.StripeID,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to create price: %w", err)
 	}
 
 	// 將新創建的價格加入緩存
-	cacheKey := fmt.Sprintf("price:%d", price.ID)
-	if err = r.cache.Set(ctx, cacheKey, price); err != nil {
-		r.logger.Warn("Failed to cache new price", zap.Error(err), zap.Uint64("id", price.ID))
+	cacheKey := fmt.Sprintf("price:%s", price.ID)
+	if err := r.cache.Set(ctx, cacheKey, price); err != nil {
+		r.logger.Warn("Failed to cache new price", zap.Error(err), zap.String("id", price.ID))
 	}
-	cacheKey = fmt.Sprintf("prices:product:%d", price.ProductID)
+	cacheKey = fmt.Sprintf("prices:product:%s", price.ProductID)
 	var cachedPrices []*models.Price
-	if _, err = r.cache.Get(ctx, cacheKey, &cachedPrices); err == nil {
+	if _, err := r.cache.Get(ctx, cacheKey, &cachedPrices); err == nil {
 		cachedPrices = append(cachedPrices, price)
 		if err = r.cache.Set(ctx, cacheKey, cachedPrices); err != nil {
-			r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.Uint64("productID", price.ProductID))
+			r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.String("productID", price.ProductID))
 		}
 	}
 
 	return nil
 }
 
-func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Price, error) {
-	cacheKey := fmt.Sprintf("price:%d", id)
+func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Price, error) {
+	cacheKey := fmt.Sprintf("price:%s", id)
 
 	price, release, err := r.getFromPool(ctx)
 	if err != nil {
@@ -120,7 +121,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 
 	found, err := r.cache.Get(ctx, cacheKey, price)
 	if err != nil {
-		r.logger.Warn("Failed to get price from cache", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to get price from cache", zap.Error(err), zap.String("id", id))
 	} else if found {
 		return price, nil
 	}
@@ -135,7 +136,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 
 	// 更新緩存
 	if err = r.cache.Set(ctx, cacheKey, price); err != nil {
-		r.logger.Warn("Failed to cache price", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to cache price", zap.Error(err), zap.String("id", id))
 	}
 
 	return price, nil
@@ -152,49 +153,48 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, price *models.Price)
 		RecurringIntervalCount: price.RecurringIntervalCount,
 		TrialPeriodDays:        price.TrialPeriodDays,
 		Active:                 price.Active,
-		StripeID:               price.StripeID,
 	}); err != nil {
 		return fmt.Errorf("failed to update price: %w", err)
 	}
 
 	// 更新緩存中的價格信息
-	cacheKey := fmt.Sprintf("price:%d", price.ID)
+	cacheKey := fmt.Sprintf("price:%s", price.ID)
 	if err := r.cache.Set(ctx, cacheKey, price); err != nil {
-		r.logger.Warn("Failed to update price in cache", zap.Error(err), zap.Uint64("id", price.ID))
+		r.logger.Warn("Failed to update price in cache", zap.Error(err), zap.String("id", price.ID))
 	}
-	cacheKey = fmt.Sprintf("prices:product:%d", price.ProductID)
+	cacheKey = fmt.Sprintf("prices:product:%s", price.ProductID)
 	if err := r.cache.Delete(ctx, cacheKey); err != nil {
-		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.Uint64("productID", price.ProductID))
+		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.String("productID", price.ProductID))
 	}
 
 	return nil
 }
 
-func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id uint64) error {
+func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id string) error {
 	productID, err := sqlc.New(r.conn).WithTx(tx).DeletePrice(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete price: %w", err)
 	}
 
 	// 從緩存中刪除價格
-	cacheKey := fmt.Sprintf("price:%d", id)
+	cacheKey := fmt.Sprintf("price:%s", id)
 	if err = r.cache.Delete(ctx, cacheKey); err != nil {
-		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.String("id", id))
 	}
-	cacheKey = fmt.Sprintf("prices:product:%d", productID)
+	cacheKey = fmt.Sprintf("prices:product:%s", productID)
 	if err = r.cache.Delete(ctx, cacheKey); err != nil {
-		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to delete price from cache", zap.Error(err), zap.String("id", id))
 	}
 
 	return nil
 }
 
-func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error) {
-	cacheKey := fmt.Sprintf("prices:product:%d", productID)
+func (r *repository) List(ctx context.Context, tx pgx.Tx, productID string) ([]*models.Price, error) {
+	cacheKey := fmt.Sprintf("prices:product:%s", productID)
 	var cachedPrices []*models.Price
 	found, err := r.cache.Get(ctx, cacheKey, &cachedPrices)
 	if err != nil {
-		r.logger.Warn("Failed to get prices from cache", zap.Error(err), zap.Uint64("productID", productID))
+		r.logger.Warn("Failed to get prices from cache", zap.Error(err), zap.String("productID", productID))
 	} else if found {
 		return cachedPrices, nil
 	}
@@ -217,9 +217,9 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64) ([]*
 		prices = append(prices, price)
 
 		// 更新單個價格的緩存
-		singleCacheKey := fmt.Sprintf("price:%d", price.ID)
+		singleCacheKey := fmt.Sprintf("price:%s", price.ID)
 		if err = r.cache.Set(ctx, singleCacheKey, price); err != nil {
-			r.logger.Warn("Failed to cache single price", zap.Error(err), zap.Uint64("id", price.ID))
+			r.logger.Warn("Failed to cache single price", zap.Error(err), zap.String("id", price.ID))
 		}
 
 		release()
@@ -227,18 +227,18 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, productID uint64) ([]*
 
 	// 緩存整個列表結果
 	if err = r.cache.Set(ctx, cacheKey, prices); err != nil {
-		r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.Uint64("productID", productID))
+		r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.String("productID", productID))
 	}
 
 	return prices, nil
 }
 
-func (r *repository) ListActive(ctx context.Context, tx pgx.Tx, productID uint64) ([]*models.Price, error) {
-	cacheKey := fmt.Sprintf("prices:product:%d", productID)
+func (r *repository) ListActive(ctx context.Context, tx pgx.Tx, productID string) ([]*models.Price, error) {
+	cacheKey := fmt.Sprintf("prices:product:%s", productID)
 	var cachedPrices []*models.Price
 	found, err := r.cache.Get(ctx, cacheKey, &cachedPrices)
 	if err != nil {
-		r.logger.Warn("Failed to get prices from cache", zap.Error(err), zap.Uint64("productID", productID))
+		r.logger.Warn("Failed to get prices from cache", zap.Error(err), zap.String("productID", productID))
 	} else if found {
 		return cachedPrices, nil
 	}
@@ -261,9 +261,9 @@ func (r *repository) ListActive(ctx context.Context, tx pgx.Tx, productID uint64
 		prices = append(prices, price)
 
 		// 更新單個價格的緩存
-		singleCacheKey := fmt.Sprintf("price:%d", price.ID)
+		singleCacheKey := fmt.Sprintf("price:%s", price.ID)
 		if err := r.cache.Set(ctx, singleCacheKey, price); err != nil {
-			r.logger.Warn("Failed to cache single price", zap.Error(err), zap.Uint64("id", price.ID))
+			r.logger.Warn("Failed to cache single price", zap.Error(err), zap.String("id", price.ID))
 		}
 
 		release()
@@ -271,8 +271,105 @@ func (r *repository) ListActive(ctx context.Context, tx pgx.Tx, productID uint64
 
 	// 緩存整個列表結果
 	if err = r.cache.Set(ctx, cacheKey, prices); err != nil {
-		r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.Uint64("productID", productID))
+		r.logger.Warn("Failed to cache prices list", zap.Error(err), zap.String("productID", productID))
 	}
 
 	return prices, nil
+}
+
+func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, price *models.PartialPrice) error {
+	query := `
+    INSERT INTO prices (id, product_id, active, currency, unit_amount, type, recurring_interval, recurring_interval_count, trial_period_days, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ON CONFLICT (id) DO UPDATE SET
+    `
+	args := []interface{}{price.ID}
+	var updateClauses []string
+	argIndex := 2
+
+	if price.ProductID != nil {
+		args = append(args, *price.ProductID)
+		updateClauses = append(updateClauses, fmt.Sprintf("product_id = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.Active != nil {
+		args = append(args, *price.Active)
+		updateClauses = append(updateClauses, fmt.Sprintf("active = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.Currency != nil {
+		args = append(args, *price.Currency)
+		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.UnitAmount != nil {
+		args = append(args, *price.UnitAmount)
+		updateClauses = append(updateClauses, fmt.Sprintf("unit_amount = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.Type != nil {
+		args = append(args, *price.Type)
+		updateClauses = append(updateClauses, fmt.Sprintf("type = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.RecurringInterval != nil {
+		args = append(args, *price.RecurringInterval)
+		updateClauses = append(updateClauses, fmt.Sprintf("recurring_interval = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.RecurringIntervalCount != nil {
+		args = append(args, *price.RecurringIntervalCount)
+		updateClauses = append(updateClauses, fmt.Sprintf("recurring_interval_count = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.TrialPeriodDays != nil {
+		args = append(args, *price.TrialPeriodDays)
+		updateClauses = append(updateClauses, fmt.Sprintf("trial_period_days = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if price.CreatedAt != nil {
+		args = append(args, *price.CreatedAt)
+		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	args = append(args, time.Now())
+	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
+
+	if len(updateClauses) > 0 {
+		query += strings.Join(updateClauses, ", ")
+	}
+	query += " WHERE id = $1"
+
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to upsert price: %w", err)
+	}
+
+	return nil
 }

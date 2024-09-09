@@ -11,11 +11,12 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, customer *models.Customer) error
-	GetByID(ctx context.Context, id uint64) (*models.Customer, error)
+	GetByID(ctx context.Context, id string) (*models.Customer, error)
 	Update(ctx context.Context, customer *models.Customer) error
-	Delete(ctx context.Context, id uint64) error
+	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, limit, offset uint64) ([]*models.Customer, error)
-	UpdateBalance(ctx context.Context, id, amount uint64) error
+	UpdateBalance(ctx context.Context, id string, amount uint64) error
+	Upsert(ctx context.Context, customer *models.PartialCustomer) error
 }
 
 type service struct {
@@ -38,7 +39,7 @@ func (s *service) Create(ctx context.Context, customer *models.Customer) error {
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.Customer, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.Customer, error) {
 	var customer *models.Customer
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -54,7 +55,7 @@ func (s *service) Update(ctx context.Context, customer *models.Customer) error {
 	})
 }
 
-func (s *service) Delete(ctx context.Context, id uint64) error {
+func (s *service) Delete(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		return s.repo.Delete(ctx, tx, id)
 	})
@@ -70,9 +71,15 @@ func (s *service) List(ctx context.Context, limit, offset uint64) ([]*models.Cus
 	return customers, err
 }
 
-func (s *service) UpdateBalance(ctx context.Context, id, balance uint64) error {
+func (s *service) UpdateBalance(ctx context.Context, id string, balance uint64) error {
 	return s.transactionManager.ExecuteSerializableTransaction(ctx, func(tx pgx.Tx) error {
 
 		return s.repo.UpdateBalance(ctx, tx, id, balance)
+	})
+}
+
+func (s *service) Upsert(ctx context.Context, customer *models.PartialCustomer) error {
+	return s.transactionManager.ExecuteSerializableTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, customer)
 	})
 }

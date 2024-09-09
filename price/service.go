@@ -13,11 +13,12 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, price *models.Price) error
-	GetByID(ctx context.Context, id uint64) (*models.Price, error)
+	GetByID(ctx context.Context, id string) (*models.Price, error)
 	Update(ctx context.Context, price *models.Price) error
-	Delete(ctx context.Context, id uint64) error
-	List(ctx context.Context, productID uint64) ([]*models.Price, error)
-	ListActive(ctx context.Context, productID uint64) ([]*models.Price, error)
+	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, productID string) ([]*models.Price, error)
+	ListActive(ctx context.Context, productID string) ([]*models.Price, error)
+	Upsert(ctx context.Context, price *models.PartialPrice) error
 }
 
 type service struct {
@@ -40,7 +41,7 @@ func (s *service) Create(ctx context.Context, price *models.Price) error {
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.Price, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.Price, error) {
 	var price *models.Price
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -58,7 +59,7 @@ func (s *service) Update(ctx context.Context, price *models.Price) error {
 		}
 
 		// Update non-empty fields
-		if price.ProductID != 0 {
+		if len(price.ProductID) != 0 {
 			existingPrice.ProductID = price.ProductID
 		}
 		if price.Type != "" {
@@ -80,21 +81,21 @@ func (s *service) Update(ctx context.Context, price *models.Price) error {
 			existingPrice.TrialPeriodDays = price.TrialPeriodDays
 		}
 		existingPrice.Active = price.Active
-		if price.StripeID != "" {
-			existingPrice.StripeID = price.StripeID
+		if price.ID != "" {
+			existingPrice.ID = price.ID
 		}
 
 		return s.repo.Update(ctx, tx, existingPrice)
 	})
 }
 
-func (s *service) Delete(ctx context.Context, id uint64) error {
+func (s *service) Delete(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		return s.repo.Delete(ctx, tx, id)
 	})
 }
 
-func (s *service) List(ctx context.Context, productID uint64) ([]*models.Price, error) {
+func (s *service) List(ctx context.Context, productID string) ([]*models.Price, error) {
 	var prices []*models.Price
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -104,7 +105,7 @@ func (s *service) List(ctx context.Context, productID uint64) ([]*models.Price, 
 	return prices, err
 }
 
-func (s *service) ListActive(ctx context.Context, productID uint64) ([]*models.Price, error) {
+func (s *service) ListActive(ctx context.Context, productID string) ([]*models.Price, error) {
 	var prices []*models.Price
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -112,4 +113,10 @@ func (s *service) ListActive(ctx context.Context, productID uint64) ([]*models.P
 		return err
 	})
 	return prices, err
+}
+
+func (s *service) Upsert(ctx context.Context, price *models.PartialPrice) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, price)
+	})
 }

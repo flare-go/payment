@@ -1,10 +1,10 @@
 -- name: CreateRefund :exec
 INSERT INTO refunds (
-    payment_intent_id,
+    id,
+    charge_id,
     amount,
     status,
-    reason,
-    stripe_id
+    reason
 ) VALUES (
              $1, $2, $3, $4, $5
          );
@@ -12,11 +12,10 @@ INSERT INTO refunds (
 -- name: GetRefund :one
 SELECT
     id,
-    payment_intent_id,
+    charge_id,
     amount,
     status,
     reason,
-    stripe_id,
     created_at,
     updated_at
 FROM refunds
@@ -33,46 +32,46 @@ WHERE id = $1;
 -- name: ListRefunds :many
 SELECT
     id,
-    payment_intent_id,
+    charge_id,
     amount,
     status,
     reason,
-    stripe_id,
     created_at,
     updated_at
 FROM refunds
-WHERE payment_intent_id = $1
+WHERE charge_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
--- name: ListRefundsByStripeID :many
+-- name: ListByChargeID :many
 SELECT
     id,
-    payment_intent_id,
+    charge_id,
     amount,
     status,
     reason,
-    stripe_id,
     created_at,
     updated_at
 FROM refunds
-WHERE stripe_id = $1
-ORDER BY created_at DESC;
-
--- name: ListByPaymentIntentID :many
-SELECT
-    id,
-    payment_intent_id,
-    amount,
-    status,
-    reason,
-    stripe_id,
-    created_at,
-    updated_at
-FROM refunds
-WHERE payment_intent_id = $1
+WHERE charge_id = $1
 ORDER BY created_at DESC;
 
 -- name: DeleteRefund :exec
 DELETE FROM refunds
 WHERE id = $1;
+
+
+-- name: UpsertRefund :exec
+INSERT INTO refunds (
+    id, charge_id, amount, status, reason
+) VALUES (
+             $1, $2, $3, $4, $5
+         )
+ON CONFLICT (id) DO UPDATE SET
+                                      charge_id = EXCLUDED.charge_id,
+                                      amount = EXCLUDED.amount,
+                                      status = EXCLUDED.status,
+                                      reason = EXCLUDED.reason,
+                                      updated_at = NOW();
+
+

@@ -13,6 +13,7 @@ import (
 
 const createPaymentMethod = `-- name: CreatePaymentMethod :exec
 INSERT INTO payment_methods (
+    id,
     customer_id,
     type,
     card_last4,
@@ -21,15 +22,15 @@ INSERT INTO payment_methods (
     card_exp_year,
     bank_account_last4,
     bank_account_bank_name,
-    is_default,
-    stripe_id
+    is_default
 ) VALUES (
              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
          )
 `
 
 type CreatePaymentMethodParams struct {
-	CustomerID          uint64            `json:"customerId"`
+	ID                  string            `json:"id"`
+	CustomerID          string            `json:"customerId"`
 	Type                PaymentMethodType `json:"type"`
 	CardLast4           *string           `json:"cardLast4"`
 	CardBrand           *string           `json:"cardBrand"`
@@ -38,11 +39,11 @@ type CreatePaymentMethodParams struct {
 	BankAccountLast4    *string           `json:"bankAccountLast4"`
 	BankAccountBankName *string           `json:"bankAccountBankName"`
 	IsDefault           bool              `json:"isDefault"`
-	StripeID            string            `json:"stripeId"`
 }
 
 func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error {
 	_, err := q.db.Exec(ctx, createPaymentMethod,
+		arg.ID,
 		arg.CustomerID,
 		arg.Type,
 		arg.CardLast4,
@@ -52,7 +53,6 @@ func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMeth
 		arg.BankAccountLast4,
 		arg.BankAccountBankName,
 		arg.IsDefault,
-		arg.StripeID,
 	)
 	return err
 }
@@ -63,20 +63,20 @@ DELETE FROM payment_methods WHERE id = $1
 `
 
 // RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
-func (q *Queries) DeletePaymentMethod(ctx context.Context, id uint64) error {
+func (q *Queries) DeletePaymentMethod(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deletePaymentMethod, id)
 	return err
 }
 
 const getPaymentMethod = `-- name: GetPaymentMethod :one
 
-SELECT id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at
+SELECT id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, created_at, updated_at
 FROM payment_methods
-WHERE id = $1 LIMIT 1
+WHERE id = $1
 `
 
 // RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
-func (q *Queries) GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMethod, error) {
+func (q *Queries) GetPaymentMethod(ctx context.Context, id string) (*PaymentMethod, error) {
 	row := q.db.QueryRow(ctx, getPaymentMethod, id)
 	var i PaymentMethod
 	err := row.Scan(
@@ -90,7 +90,6 @@ func (q *Queries) GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMeth
 		&i.BankAccountLast4,
 		&i.BankAccountBankName,
 		&i.IsDefault,
-		&i.StripeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -98,7 +97,7 @@ func (q *Queries) GetPaymentMethod(ctx context.Context, id uint64) (*PaymentMeth
 }
 
 const listPaymentMethods = `-- name: ListPaymentMethods :many
-SELECT id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at
+SELECT id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, created_at, updated_at
 FROM payment_methods
 WHERE customer_id = $1
 ORDER BY is_default DESC, created_at DESC
@@ -106,7 +105,7 @@ LIMIT $2 OFFSET $3
 `
 
 type ListPaymentMethodsParams struct {
-	CustomerID uint64 `json:"customerId"`
+	CustomerID string `json:"customerId"`
 	Limit      int64  `json:"limit"`
 	Offset     int64  `json:"offset"`
 }
@@ -131,7 +130,6 @@ func (q *Queries) ListPaymentMethods(ctx context.Context, arg ListPaymentMethods
 			&i.BankAccountLast4,
 			&i.BankAccountBankName,
 			&i.IsDefault,
-			&i.StripeID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -156,15 +154,14 @@ SET
     bank_account_last4 = $7,
     bank_account_bank_name = $8,
     is_default = $9,
-    stripe_id = $10,
     updated_at = NOW()
 WHERE
     id = $1
-  AND updated_at = $11
+  AND updated_at = $10
 `
 
 type UpdatePaymentMethodParams struct {
-	ID                  uint64             `json:"id"`
+	ID                  string             `json:"id"`
 	Type                PaymentMethodType  `json:"type"`
 	CardLast4           *string            `json:"cardLast4"`
 	CardBrand           *string            `json:"cardBrand"`
@@ -173,7 +170,6 @@ type UpdatePaymentMethodParams struct {
 	BankAccountLast4    *string            `json:"bankAccountLast4"`
 	BankAccountBankName *string            `json:"bankAccountBankName"`
 	IsDefault           bool               `json:"isDefault"`
-	StripeID            string             `json:"stripeId"`
 	UpdatedAt           pgtype.Timestamptz `json:"updatedAt"`
 }
 
@@ -188,8 +184,65 @@ func (q *Queries) UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMeth
 		arg.BankAccountLast4,
 		arg.BankAccountBankName,
 		arg.IsDefault,
-		arg.StripeID,
 		arg.UpdatedAt,
+	)
+	return err
+}
+
+const upsertPaymentMethod = `-- name: UpsertPaymentMethod :exec
+INSERT INTO payment_methods (
+    id,
+    customer_id,
+    type,
+    card_last4,
+    card_brand,
+    card_exp_month,
+    card_exp_year,
+    bank_account_last4,
+    bank_account_bank_name,
+    is_default
+) VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+         )
+ON CONFLICT (id)
+    DO UPDATE SET
+                  customer_id = EXCLUDED.customer_id,
+                  type = EXCLUDED.type,
+                  card_last4 = EXCLUDED.card_last4,
+                  card_brand = EXCLUDED.card_brand,
+                  card_exp_month = EXCLUDED.card_exp_month,
+                  card_exp_year = EXCLUDED.card_exp_year,
+                  bank_account_last4 = EXCLUDED.bank_account_last4,
+                  bank_account_bank_name = EXCLUDED.bank_account_bank_name,
+                  is_default = EXCLUDED.is_default,
+                  updated_at = NOW()
+`
+
+type UpsertPaymentMethodParams struct {
+	ID                  string            `json:"id"`
+	CustomerID          string            `json:"customerId"`
+	Type                PaymentMethodType `json:"type"`
+	CardLast4           *string           `json:"cardLast4"`
+	CardBrand           *string           `json:"cardBrand"`
+	CardExpMonth        *int32            `json:"cardExpMonth"`
+	CardExpYear         *int32            `json:"cardExpYear"`
+	BankAccountLast4    *string           `json:"bankAccountLast4"`
+	BankAccountBankName *string           `json:"bankAccountBankName"`
+	IsDefault           bool              `json:"isDefault"`
+}
+
+func (q *Queries) UpsertPaymentMethod(ctx context.Context, arg UpsertPaymentMethodParams) error {
+	_, err := q.db.Exec(ctx, upsertPaymentMethod,
+		arg.ID,
+		arg.CustomerID,
+		arg.Type,
+		arg.CardLast4,
+		arg.CardBrand,
+		arg.CardExpMonth,
+		arg.CardExpYear,
+		arg.BankAccountLast4,
+		arg.BankAccountBankName,
+		arg.IsDefault,
 	)
 	return err
 }

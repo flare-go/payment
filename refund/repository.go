@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,11 +19,11 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, tx pgx.Tx, refund *models.Refund) error
-	GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Refund, error)
+	GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Refund, error)
 	Update(ctx context.Context, tx pgx.Tx, refund *models.Refund) error
-	List(ctx context.Context, tx pgx.Tx, paymentIntentID uint64, limit, offset uint64) ([]*models.Refund, error)
-	ListByStripeID(ctx context.Context, stripeID string) ([]*models.Refund, error)
-	ListByPaymentIntentID(ctx context.Context, paymentIntentID uint64) ([]*models.Refund, error)
+	List(ctx context.Context, tx pgx.Tx, chargeID string, limit, offset uint64) ([]*models.Refund, error)
+	ListByChargeID(ctx context.Context, chargeID string) ([]*models.Refund, error)
+	Upsert(ctx context.Context, tx pgx.Tx, refund *models.PartialRefund) error
 }
 
 type repository struct {
@@ -78,25 +79,25 @@ func (r *repository) getFromPool(ctx context.Context) (*models.Refund, func(), e
 
 func (r *repository) Create(ctx context.Context, tx pgx.Tx, refund *models.Refund) error {
 	if err := sqlc.New(r.conn).WithTx(tx).CreateRefund(ctx, sqlc.CreateRefundParams{
-		PaymentIntentID: refund.PaymentIntentID,
-		Amount:          refund.Amount,
-		Status:          sqlc.RefundStatus(refund.Status),
-		Reason:          &refund.Reason,
-		StripeID:        refund.StripeID,
+		ID:       refund.ID,
+		ChargeID: refund.ChargeID,
+		Amount:   refund.Amount,
+		Status:   sqlc.RefundStatus(refund.Status),
+		Reason:   &refund.Reason,
 	}); err != nil {
 		return fmt.Errorf("failed to create refund: %w", err)
 	}
 
-	cacheKey := fmt.Sprintf("refund:%d", refund.ID)
+	cacheKey := fmt.Sprintf("refund:%s", refund.ID)
 	if err := r.cache.Set(ctx, cacheKey, refund); err != nil {
-		r.logger.Warn("Failed to cache refund", zap.Error(err), zap.Uint64("id", refund.ID))
+		r.logger.Warn("Failed to cache refund", zap.Error(err), zap.String("id", refund.ID))
 	}
 
 	return nil
 }
 
-func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Refund, error) {
-	cacheKey := fmt.Sprintf("refund:%d", id)
+func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Refund, error) {
+	cacheKey := fmt.Sprintf("refund:%s", id)
 
 	refund, release, err := r.getFromPool(ctx)
 	if err != nil {
@@ -106,7 +107,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 
 	found, err := r.cache.Get(ctx, cacheKey, refund)
 	if err != nil {
-		r.logger.Warn("Failed to get refund from cache", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to get refund from cache", zap.Error(err), zap.String("id", id))
 	} else if found {
 		return refund, nil
 	}
@@ -119,7 +120,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 	*refund = *models.NewRefund().ConvertFromSQLCRefund(sqlcRefund)
 
 	if err = r.cache.Set(ctx, cacheKey, refund); err != nil {
-		r.logger.Warn("Failed to cache refund", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to cache refund", zap.Error(err), zap.String("id", id))
 	}
 
 	return refund, nil
@@ -134,28 +135,28 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, refund *models.Refun
 		return fmt.Errorf("failed to update refund: %w", err)
 	}
 
-	cacheKey := fmt.Sprintf("refund:%d", refund.ID)
+	cacheKey := fmt.Sprintf("refund:%s", refund.ID)
 	if err := r.cache.Set(ctx, cacheKey, refund); err != nil {
-		r.logger.Warn("Failed to update refund in cache", zap.Error(err), zap.Uint64("id", refund.ID))
+		r.logger.Warn("Failed to update refund in cache", zap.Error(err), zap.String("id", refund.ID))
 	}
 
 	return nil
 }
 
-func (r *repository) List(ctx context.Context, tx pgx.Tx, paymentIntentID uint64, limit, offset uint64) ([]*models.Refund, error) {
-	cacheKey := fmt.Sprintf("refunds:paymentIntent:%d:limit:%d:offset:%d", paymentIntentID, limit, offset)
+func (r *repository) List(ctx context.Context, tx pgx.Tx, chargeID string, limit, offset uint64) ([]*models.Refund, error) {
+	cacheKey := fmt.Sprintf("refunds:chargeID:%s:limit:%d:offset:%d", chargeID, limit, offset)
 	var cachedRefunds []*models.Refund
 	found, err := r.cache.Get(ctx, cacheKey, &cachedRefunds)
 	if err != nil {
-		r.logger.Warn("Failed to get refunds from cache", zap.Error(err), zap.Uint64("paymentIntentID", paymentIntentID))
+		r.logger.Warn("Failed to get refunds from cache", zap.Error(err), zap.String("chargeID", chargeID))
 	} else if found {
 		return cachedRefunds, nil
 	}
 
 	sqlcRefunds, err := sqlc.New(r.conn).WithTx(tx).ListRefunds(ctx, sqlc.ListRefundsParams{
-		PaymentIntentID: paymentIntentID,
-		Limit:           int64(limit),
-		Offset:          int64(offset),
+		ChargeID: chargeID,
+		Limit:    int64(limit),
+		Offset:   int64(offset),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list refunds: %w", err)
@@ -173,9 +174,9 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, paymentIntentID uint64
 		refunds = append(refunds, refund)
 
 		// Update cache for individual refund
-		individualCacheKey := fmt.Sprintf("refund:%d", refund.ID)
+		individualCacheKey := fmt.Sprintf("refund:%s", refund.ID)
 		if err = r.cache.Set(ctx, individualCacheKey, refund); err != nil {
-			r.logger.Warn("Failed to cache individual refund", zap.Error(err), zap.Uint64("id", refund.ID))
+			r.logger.Warn("Failed to cache individual refund", zap.Error(err), zap.String("id", refund.ID))
 		}
 
 		release()
@@ -183,23 +184,23 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, paymentIntentID uint64
 
 	// Cache the list of refunds
 	if err = r.cache.Set(ctx, cacheKey, refunds); err != nil {
-		r.logger.Warn("Failed to cache refunds list", zap.Error(err), zap.Uint64("paymentIntentID", paymentIntentID))
+		r.logger.Warn("Failed to cache refunds list", zap.Error(err), zap.String("chargeID", chargeID))
 	}
 
 	return refunds, nil
 }
 
-func (r *repository) ListByStripeID(ctx context.Context, stripeID string) ([]*models.Refund, error) {
-	cacheKey := fmt.Sprintf("refunds:stripeID:%s", stripeID)
+func (r *repository) ListByChargeID(ctx context.Context, chargeID string) ([]*models.Refund, error) {
+	cacheKey := fmt.Sprintf("refunds:chargeID:%s", chargeID)
 	var cachedRefunds []*models.Refund
 	found, err := r.cache.Get(ctx, cacheKey, &cachedRefunds)
 	if err != nil {
-		r.logger.Warn("Failed to get refunds from cache", zap.Error(err), zap.String("stripeID", stripeID))
+		r.logger.Warn("Failed to get refunds from cache", zap.Error(err), zap.String("chargeID", chargeID))
 	} else if found {
 		return cachedRefunds, nil
 	}
 
-	sqlcRefunds, err := sqlc.New(r.conn).ListRefundsByStripeID(ctx, stripeID)
+	sqlcRefunds, err := sqlc.New(r.conn).ListByChargeID(ctx, chargeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list refunds by Stripe ID: %w", err)
 	}
@@ -216,9 +217,9 @@ func (r *repository) ListByStripeID(ctx context.Context, stripeID string) ([]*mo
 		refunds = append(refunds, refund)
 
 		// Update cache for individual refund
-		individualCacheKey := fmt.Sprintf("refund:%d", refund.ID)
+		individualCacheKey := fmt.Sprintf("refund:%s", refund.ID)
 		if err = r.cache.Set(ctx, individualCacheKey, refund); err != nil {
-			r.logger.Warn("Failed to cache individual refund", zap.Error(err), zap.Uint64("id", refund.ID))
+			r.logger.Warn("Failed to cache individual refund", zap.Error(err), zap.String("id", refund.ID))
 		}
 
 		release()
@@ -226,51 +227,73 @@ func (r *repository) ListByStripeID(ctx context.Context, stripeID string) ([]*mo
 
 	// Cache the list of refunds
 	if err = r.cache.Set(ctx, cacheKey, refunds); err != nil {
-		r.logger.Warn("Failed to cache refunds list", zap.Error(err), zap.String("stripeID", stripeID))
+		r.logger.Warn("Failed to cache refunds list", zap.Error(err), zap.String("chargeID", chargeID))
 	}
 
 	return refunds, nil
 }
 
-func (r *repository) ListByPaymentIntentID(ctx context.Context, paymentIntentID uint64) ([]*models.Refund, error) {
-	cacheKey := fmt.Sprintf("refunds:paymentIntentID:%d", paymentIntentID)
-	var cachedRefunds []*models.Refund
-	found, err := r.cache.Get(ctx, cacheKey, &cachedRefunds)
-	if err != nil {
-		r.logger.Warn("Failed to get refunds from cache", zap.Error(err), zap.Uint64("paymentIntentID", paymentIntentID))
-	} else if found {
-		return cachedRefunds, nil
+func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, refund *models.PartialRefund) error {
+	query := `
+    INSERT INTO refunds (id, charge_id, amount, status, reason, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (id) DO UPDATE SET
+    `
+	args := []interface{}{refund.ID}
+	var updateClauses []string
+	argIndex := 2
+
+	if refund.ChargeID != nil {
+		args = append(args, *refund.ChargeID)
+		updateClauses = append(updateClauses, fmt.Sprintf("charge_id = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
 	}
 
-	sqlcRefunds, err := sqlc.New(r.conn).ListByPaymentIntentID(ctx, paymentIntentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list refunds by Stripe ID: %w", err)
+	if refund.Amount != nil {
+		args = append(args, *refund.Amount)
+		updateClauses = append(updateClauses, fmt.Sprintf("amount = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
 	}
 
-	refunds := make([]*models.Refund, 0, len(sqlcRefunds))
-	for _, sqlcRefund := range sqlcRefunds {
-		refund, release, err := r.getFromPool(ctx)
-		if err != nil {
-			r.logger.Error("Failed to get refund from pool", zap.Error(err))
-			continue
-		}
-
-		*refund = *models.NewRefund().ConvertFromSQLCRefund(sqlcRefund)
-		refunds = append(refunds, refund)
-
-		// Update cache for individual refund
-		individualCacheKey := fmt.Sprintf("refund:%d", refund.ID)
-		if err = r.cache.Set(ctx, individualCacheKey, refund); err != nil {
-			r.logger.Warn("Failed to cache individual refund", zap.Error(err), zap.Uint64("id", refund.ID))
-		}
-
-		release()
+	if refund.Status != nil {
+		args = append(args, *refund.Status)
+		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
 	}
 
-	// Cache the list of refunds
-	if err = r.cache.Set(ctx, cacheKey, refunds); err != nil {
-		r.logger.Warn("Failed to cache refunds list", zap.Error(err), zap.Uint64("paymentIntentID", paymentIntentID))
+	if refund.Reason != nil {
+		args = append(args, *refund.Reason)
+		updateClauses = append(updateClauses, fmt.Sprintf("reason = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
 	}
 
-	return refunds, nil
+	if refund.CreatedAt != nil {
+		args = append(args, *refund.CreatedAt)
+		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	args = append(args, time.Now())
+	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
+
+	if len(updateClauses) > 0 {
+		query += strings.Join(updateClauses, ", ")
+	}
+	query += " WHERE id = $1"
+
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to upsert refund: %w", err)
+	}
+
+	return nil
 }

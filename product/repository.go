@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,10 +20,11 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, tx pgx.Tx, product *models.Product) error
-	GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Product, error)
+	GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Product, error)
 	Update(ctx context.Context, tx pgx.Tx, product *models.Product) error
-	Delete(ctx context.Context, tx pgx.Tx, id uint64) error
+	Delete(ctx context.Context, tx pgx.Tx, id string) error
 	List(ctx context.Context, tx pgx.Tx, limit, offset uint64) ([]*models.Product, error)
+	Upsert(ctx context.Context, tx pgx.Tx, product *models.PartialProduct) error
 }
 
 type repository struct {
@@ -88,11 +90,11 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, product *models.Prod
 	}
 
 	sqlcProduct, err := sqlc.New(r.conn).WithTx(tx).CreateProduct(ctx, sqlc.CreateProductParams{
+		ID:          product.ID,
 		Name:        product.Name,
 		Description: &product.Description,
 		Active:      product.Active,
 		Metadata:    metadata,
-		StripeID:    product.StripeID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create product: %w", err)
@@ -102,16 +104,16 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, product *models.Prod
 	product.ID = sqlcProduct.ID
 	product.CreatedAt = sqlcProduct.CreatedAt.Time
 	product.UpdatedAt = sqlcProduct.UpdatedAt.Time
-	cacheKey := fmt.Sprintf("product:%d", product.ID)
+	cacheKey := fmt.Sprintf("product:%s", product.ID)
 	if err = r.cache.Set(ctx, cacheKey, product); err != nil {
-		r.logger.Warn("Failed to cache new product", zap.Error(err), zap.Uint64("id", product.ID))
+		r.logger.Warn("Failed to cache new product", zap.Error(err), zap.String("id", product.ID))
 	}
 
 	return nil
 }
 
-func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Product, error) {
-	cacheKey := fmt.Sprintf("product:%d", id)
+func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Product, error) {
+	cacheKey := fmt.Sprintf("product:%s", id)
 	product, release, err := r.getFromPool(ctx)
 	if err != nil {
 		return nil, err
@@ -120,7 +122,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 
 	found, err := r.cache.Get(ctx, cacheKey, product)
 	if err != nil {
-		r.logger.Warn("Failed to get product from cache", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to get product from cache", zap.Error(err), zap.String("id", id))
 	} else if found {
 		return product, nil
 	}
@@ -135,7 +137,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 
 	// 更新緩存
 	if err = r.cache.Set(ctx, cacheKey, product); err != nil {
-		r.logger.Warn("Failed to cache product", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to cache product", zap.Error(err), zap.String("id", id))
 	}
 
 	return product, nil
@@ -157,7 +159,6 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, product *models.Prod
 		Description: &product.Description,
 		Active:      product.Active,
 		Metadata:    metadata,
-		StripeID:    product.StripeID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update product: %w", err)
@@ -166,24 +167,24 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, product *models.Prod
 	// 更新緩存中的產品信息
 	product.CreatedAt = sqlcProduct.CreatedAt.Time
 	product.UpdatedAt = sqlcProduct.UpdatedAt.Time
-	cacheKey := fmt.Sprintf("product:%d", product.ID)
-	if err := r.cache.Set(ctx, cacheKey, product); err != nil {
-		r.logger.Warn("Failed to update product in cache", zap.Error(err), zap.Uint64("id", product.ID))
+	cacheKey := fmt.Sprintf("product:%s", product.ID)
+	if err = r.cache.Set(ctx, cacheKey, product); err != nil {
+		r.logger.Warn("Failed to update product in cache", zap.Error(err), zap.String("id", product.ID))
 	}
 
 	return nil
 }
 
-func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id uint64) error {
+func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id string) error {
 	err := sqlc.New(r.conn).WithTx(tx).DeleteProduct(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete product: %w", err)
 	}
 
 	// 從緩存中刪除產品
-	cacheKey := fmt.Sprintf("product:%d", id)
-	if err := r.cache.Delete(ctx, cacheKey); err != nil {
-		r.logger.Warn("Failed to delete product from cache", zap.Error(err), zap.Uint64("id", id))
+	cacheKey := fmt.Sprintf("product:%s", id)
+	if err = r.cache.Delete(ctx, cacheKey); err != nil {
+		r.logger.Warn("Failed to delete product from cache", zap.Error(err), zap.String("id", id))
 	}
 
 	return nil
@@ -220,18 +221,83 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64) 
 		products = append(products, product)
 
 		// 更新單個產品的緩存
-		singleCacheKey := fmt.Sprintf("product:%d", product.ID)
-		if err := r.cache.Set(ctx, singleCacheKey, product); err != nil {
-			r.logger.Warn("Failed to cache single product", zap.Error(err), zap.Uint64("id", product.ID))
+		singleCacheKey := fmt.Sprintf("product:%s", product.ID)
+		if err = r.cache.Set(ctx, singleCacheKey, product); err != nil {
+			r.logger.Warn("Failed to cache single product", zap.Error(err), zap.String("id", product.ID))
 		}
 
 		release()
 	}
 
 	// 緩存整個列表結果
-	if err = r.cache.Set(ctx, cacheKey, products, 5*time.Minute); err != nil {
+	if err = r.cache.Set(ctx, cacheKey, products); err != nil {
 		r.logger.Warn("Failed to cache products list", zap.Error(err))
 	}
 
 	return products, nil
+}
+
+func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, product *models.PartialProduct) error {
+	query := `
+    INSERT INTO products (id, name, description, active, metadata, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (id) DO UPDATE SET
+    `
+	args := []interface{}{product.ID}
+	var updateClauses []string
+	argIndex := 2
+
+	if product.Name != nil {
+		args = append(args, *product.Name)
+		updateClauses = append(updateClauses, fmt.Sprintf("name = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if product.Description != nil {
+		args = append(args, *product.Description)
+		updateClauses = append(updateClauses, fmt.Sprintf("description = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if product.Active != nil {
+		args = append(args, *product.Active)
+		updateClauses = append(updateClauses, fmt.Sprintf("active = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if product.Metadata != nil {
+		args = append(args, *product.Metadata)
+		updateClauses = append(updateClauses, fmt.Sprintf("metadata = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if product.CreatedAt != nil {
+		args = append(args, *product.CreatedAt)
+		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	args = append(args, time.Now())
+	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
+
+	if len(updateClauses) > 0 {
+		query += strings.Join(updateClauses, ", ")
+	}
+	query += " WHERE id = $1"
+
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to upsert product: %w", err)
+	}
+
+	return nil
 }

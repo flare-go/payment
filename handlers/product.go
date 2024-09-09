@@ -7,7 +7,6 @@ import (
 	"goflare.io/payment"
 	"goflare.io/payment/models"
 	"net/http"
-	"strconv"
 )
 
 type ProductHandler interface {
@@ -31,7 +30,6 @@ func NewProductHandler(payment payment.Payment, logger *zap.Logger) ProductHandl
 }
 
 func (ph *productHandler) CreateProduct(c echo.Context) error {
-	ctx := c.Request().Context()
 
 	var req models.Product
 	if err := c.Bind(&req); err != nil {
@@ -43,7 +41,7 @@ func (ph *productHandler) CreateProduct(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	if err := ph.Payment.CreateProduct(ctx, req); err != nil {
+	if err := ph.Payment.CreateProduct(req); err != nil {
 		ph.Logger.Error("Failed to create product", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create product"})
 	}
@@ -54,15 +52,11 @@ func (ph *productHandler) CreateProduct(c echo.Context) error {
 func (ph *productHandler) GetProduct(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		ph.Logger.Error("Invalid product ID", zap.Error(err))
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
-	}
+	id := c.Param("id")
 
 	product, err := ph.Payment.GetProductWithAllPrices(ctx, id)
 	if err != nil {
-		ph.Logger.Error("Failed to get product", zap.Error(err), zap.Uint64("id", id))
+		ph.Logger.Error("Failed to get product", zap.Error(err), zap.String("id", id))
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Product not found"})
 	}
 
@@ -70,13 +64,8 @@ func (ph *productHandler) GetProduct(c echo.Context) error {
 }
 
 func (ph *productHandler) UpdateProduct(c echo.Context) error {
-	ctx := c.Request().Context()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		ph.Logger.Error("Invalid product ID", zap.Error(err))
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
-	}
+	id := c.Param("id")
 
 	var productReq struct {
 		Name        string            `json:"name"`
@@ -86,7 +75,7 @@ func (ph *productHandler) UpdateProduct(c echo.Context) error {
 		StripeID    string            `json:"stripe_id"`
 	}
 
-	if err = c.Bind(&productReq); err != nil {
+	if err := c.Bind(&productReq); err != nil {
 		ph.Logger.Error("Failed to bind product request", zap.Error(err))
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
 	}
@@ -97,11 +86,10 @@ func (ph *productHandler) UpdateProduct(c echo.Context) error {
 		Description: productReq.Description,
 		Active:      productReq.Active,
 		Metadata:    productReq.Metadata,
-		StripeID:    productReq.StripeID,
 	}
 
-	if err = ph.Payment.UpdateProduct(ctx, product); err != nil {
-		ph.Logger.Error("Failed to update product", zap.Error(err), zap.Uint64("id", id))
+	if err := ph.Payment.UpdateProduct(product); err != nil {
+		ph.Logger.Error("Failed to update product", zap.Error(err), zap.String("id", id))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update product"})
 	}
 
@@ -109,17 +97,11 @@ func (ph *productHandler) UpdateProduct(c echo.Context) error {
 }
 
 func (ph *productHandler) DeleteProduct(c echo.Context) error {
-	ctx := c.Request().Context()
 
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		ph.Logger.Error("Invalid product ID", zap.Error(err))
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid product ID"})
-	}
+	id := c.Param("id")
 
-	err = ph.Payment.DeleteProduct(ctx, id)
-	if err != nil {
-		ph.Logger.Error("Failed to delete product", zap.Error(err), zap.Uint64("id", id))
+	if err := ph.Payment.DeleteProduct(id); err != nil {
+		ph.Logger.Error("Failed to delete product", zap.Error(err), zap.String("id", id))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete product"})
 	}
 

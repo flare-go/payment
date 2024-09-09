@@ -14,11 +14,14 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, paymentIntent *models.PaymentIntent) error
-	GetByID(ctx context.Context, id uint64) (*models.PaymentIntent, error)
+	GetByID(ctx context.Context, id string) (*models.PaymentIntent, error)
 	Update(ctx context.Context, paymentIntent *models.PaymentIntent) error
-	List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.PaymentIntent, error)
-	Confirm(ctx context.Context, id uint64, paymentMethodID *uint64) error
-	Cancel(ctx context.Context, id uint64) error
+	List(ctx context.Context, limit, offset uint64) ([]*models.PaymentIntent, error)
+	ListByCustomer(ctx context.Context, customerID string, limit, offset uint64) ([]*models.PaymentIntent, error)
+	Confirm(ctx context.Context, id string, paymentMethodID string) error
+	Failed(ctx context.Context, id string, paymentMethodID string) error
+	Cancel(ctx context.Context, id string) error
+	Upsert(ctx context.Context, paymentIntent *models.PartialPaymentIntent) error
 }
 
 type service struct {
@@ -41,7 +44,7 @@ func (s *service) Create(ctx context.Context, paymentIntent *models.PaymentInten
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.PaymentIntent, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.PaymentIntent, error) {
 	var paymentIntent *models.PaymentIntent
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -59,27 +62,37 @@ func (s *service) Update(ctx context.Context, paymentIntent *models.PaymentInten
 		}
 
 		// Update only allowed fields
+		existingPaymentIntent.ID = paymentIntent.ID
 		existingPaymentIntent.Status = paymentIntent.Status
 		existingPaymentIntent.PaymentMethodID = paymentIntent.PaymentMethodID
 		existingPaymentIntent.SetupFutureUsage = paymentIntent.SetupFutureUsage
-		existingPaymentIntent.StripeID = paymentIntent.StripeID
 		existingPaymentIntent.ClientSecret = paymentIntent.ClientSecret
 
 		return s.repo.Update(ctx, tx, existingPaymentIntent)
 	})
 }
 
-func (s *service) List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.PaymentIntent, error) {
+func (s *service) List(ctx context.Context, limit, offset uint64) ([]*models.PaymentIntent, error) {
 	var paymentIntents []*models.PaymentIntent
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
-		paymentIntents, err = s.repo.List(ctx, tx, customerID, limit, offset)
+		paymentIntents, err = s.repo.List(ctx, tx, limit, offset)
 		return err
 	})
 	return paymentIntents, err
 }
 
-func (s *service) Confirm(ctx context.Context, id uint64, paymentMethodID *uint64) error {
+func (s *service) ListByCustomer(ctx context.Context, customerID string, limit, offset uint64) ([]*models.PaymentIntent, error) {
+	var paymentIntents []*models.PaymentIntent
+	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		var err error
+		paymentIntents, err = s.repo.ListByCustomer(ctx, tx, customerID, limit, offset)
+		return err
+	})
+	return paymentIntents, err
+}
+
+func (s *service) Confirm(ctx context.Context, id, paymentMethodID string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		paymentIntent, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -94,19 +107,30 @@ func (s *service) Confirm(ctx context.Context, id uint64, paymentMethodID *uint6
 		paymentIntent.Status = enum.PaymentIntentStatusSucceeded
 		paymentIntent.PaymentMethodID = paymentMethodID
 
-		// Here you would typically integrate with your payment provider (e.g., Stripe)
-		// to actually process the payment. This is just a placeholder.
-		// stripeConfirmation, err := s.stripeClient.ConfirmPaymentIntent(paymentIntent.StripeID)
-		// if err != nil {
-		//     return fmt.Errorf("failed to confirm payment with Stripe: %w", err)
-		// }
-		// paymentIntent.StripeID = stripeConfirmation.ID
+		return s.repo.Update(ctx, tx, paymentIntent)
+	})
+}
+
+func (s *service) Failed(ctx context.Context, id, paymentMethodID string) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		paymentIntent, err := s.repo.GetByID(ctx, tx, id)
+		if err != nil {
+			return fmt.Errorf("failed to get payment intent: %w", err)
+		}
+
+		if paymentIntent.Status != enum.PaymentIntentStatusRequiresPaymentMethod &&
+			paymentIntent.Status != enum.PaymentIntentStatusRequiresConfirmation {
+			return fmt.Errorf("payment intent cannot be confirmed in its current status: %s", paymentIntent.Status)
+		}
+
+		paymentIntent.Status = enum.PaymentIntentStatusFailed
+		paymentIntent.PaymentMethodID = paymentMethodID
 
 		return s.repo.Update(ctx, tx, paymentIntent)
 	})
 }
 
-func (s *service) Cancel(ctx context.Context, id uint64) error {
+func (s *service) Cancel(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		paymentIntent, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -120,13 +144,12 @@ func (s *service) Cancel(ctx context.Context, id uint64) error {
 
 		paymentIntent.Status = enum.PaymentIntentStatusCanceled
 
-		// Here you would typically integrate with your payment provider (e.g., Stripe)
-		// to cancel the payment intent on their side as well. This is just a placeholder.
-		// err = s.stripeClient.CancelPaymentIntent(paymentIntent.StripeID)
-		// if err != nil {
-		//     return fmt.Errorf("failed to cancel payment with Stripe: %w", err)
-		// }
-
 		return s.repo.Update(ctx, tx, paymentIntent)
+	})
+}
+
+func (s *service) Upsert(ctx context.Context, paymentIntent *models.PartialPaymentIntent) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, paymentIntent)
 	})
 }

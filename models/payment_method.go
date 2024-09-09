@@ -10,19 +10,32 @@ import (
 // PaymentMethod 代表客戶的支付方式
 // PaymentMethod represents a customer's payment method
 type PaymentMethod struct {
-	ID                  uint64
-	CustomerID          uint64
+	ID                  string
+	CustomerID          string
 	Type                enum.PaymentMethodType
 	CardLast4           string
 	CardBrand           string
 	CardExpMonth        int32
 	CardExpYear         int32
-	BankAccountLast4    string // 添加銀行帳號後四位
-	BankAccountBankName string // 添加銀行名稱
-	IsDefault           bool   // 添加是否為默認支付方式
-	StripeID            string
+	BankAccountLast4    string
+	BankAccountBankName string
+	IsDefault           bool
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+}
+
+type PartialPaymentMethod struct {
+	ID                  string
+	CustomerID          *string
+	Type                *enum.PaymentMethodType
+	CardLast4           *string
+	CardBrand           *string
+	CardExpMonth        *int32
+	CardExpYear         *int32
+	BankAccountLast4    *string
+	BankAccountBankName *string
+	CreatedAt           *time.Time
+	UpdatedAt           *time.Time
 }
 
 func NewPaymentMethod() *PaymentMethod {
@@ -32,12 +45,11 @@ func NewPaymentMethod() *PaymentMethod {
 func (pm *PaymentMethod) ConvertFromSQLCPaymentMethod(sqlcPaymentMethod any) *PaymentMethod {
 
 	var (
-		id, customerID                                                        uint64
-		paymentMethodType                                                     enum.PaymentMethodType
-		cardLast4, cardBrand, bankAccountLast4, bankAccountBankName, stripeID string
-		cardExpMonth, cardExpYear                                             int32
-		isDefault                                                             bool
-		createdAt, updatedAt                                                  time.Time
+		paymentMethodType                                                           enum.PaymentMethodType
+		id, customerID, cardLast4, cardBrand, bankAccountLast4, bankAccountBankName string
+		cardExpMonth, cardExpYear                                                   int32
+		isDefault                                                                   bool
+		createdAt, updatedAt                                                        time.Time
 	)
 
 	switch sp := sqlcPaymentMethod.(type) {
@@ -63,7 +75,6 @@ func (pm *PaymentMethod) ConvertFromSQLCPaymentMethod(sqlcPaymentMethod any) *Pa
 		if sp.BankAccountBankName != nil {
 			bankAccountBankName = *sp.BankAccountBankName
 		}
-		stripeID = sp.StripeID
 		isDefault = sp.IsDefault
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time
@@ -80,7 +91,6 @@ func (pm *PaymentMethod) ConvertFromSQLCPaymentMethod(sqlcPaymentMethod any) *Pa
 	pm.CardExpYear = cardExpYear
 	pm.BankAccountLast4 = bankAccountLast4
 	pm.BankAccountBankName = bankAccountBankName
-	pm.StripeID = stripeID
 	pm.IsDefault = isDefault
 	pm.CreatedAt = createdAt
 	pm.UpdatedAt = updatedAt

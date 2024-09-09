@@ -13,22 +13,25 @@ import (
 )
 
 type Server struct {
-	echo     *echo.Echo
-	Customer handlers.CustomerHandler
-	Product  handlers.ProductHandler
-	Price    handlers.PriceHandler
+	echo          *echo.Echo
+	Customer      handlers.CustomerHandler
+	Product       handlers.ProductHandler
+	Price         handlers.PriceHandler
+	PaymentIntent handlers.PaymentIntentHandler
 }
 
 func NewServer(
 	Customer handlers.CustomerHandler,
 	Product handlers.ProductHandler,
 	Price handlers.PriceHandler,
+	PaymentIntent handlers.PaymentIntentHandler,
 ) *Server {
 	return &Server{
-		echo:     echo.New(),
-		Customer: Customer,
-		Product:  Product,
-		Price:    Price,
+		echo:          echo.New(),
+		Customer:      Customer,
+		Product:       Product,
+		Price:         Price,
+		PaymentIntent: PaymentIntent,
 	}
 }
 
@@ -82,4 +85,7 @@ func (s *Server) registerRoutes() {
 
 	s.echo.POST("/price", s.Price.CreatePrice)
 	s.echo.DELETE("/price/:id", s.Price.DeletePrice)
+
+	s.echo.POST("/payment/intent", s.PaymentIntent.CreatePaymentIntent)
+	s.echo.POST("/payment/intent/confirm", s.PaymentIntent.ConfirmPaymentIntent)
 }

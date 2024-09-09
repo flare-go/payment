@@ -7,14 +7,23 @@ import (
 )
 
 type Refund struct {
-	ID              uint64            `json:"id"`
-	PaymentIntentID uint64            `json:"payment_intent_id"`
-	Amount          float64           `json:"amount"`
-	Status          enum.RefundStatus `json:"status"`
-	Reason          string            `json:"reason"`
-	StripeID        string            `json:"stripe_id"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
+	ID        string            `json:"id"`
+	ChargeID  string            `json:"charge_id"`
+	Amount    float64           `json:"amount"`
+	Status    enum.RefundStatus `json:"status"`
+	Reason    string            `json:"reason"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+type PartialRefund struct {
+	ID        string
+	ChargeID  *string
+	Amount    *float64
+	Status    *enum.RefundStatus
+	Reason    *string
+	CreatedAt *time.Time
+	UpdatedAt *time.Time
 }
 
 func NewRefund() *Refund {
@@ -24,9 +33,8 @@ func NewRefund() *Refund {
 func (r *Refund) ConvertFromSQLCRefund(sqlcRefund any) *Refund {
 
 	var (
-		id, paymentIntentID  uint64
 		amount               float64
-		reason, stripeID     string
+		id, chargeID, reason string
 		status               enum.RefundStatus
 		createdAt, updatedAt time.Time
 	)
@@ -34,13 +42,12 @@ func (r *Refund) ConvertFromSQLCRefund(sqlcRefund any) *Refund {
 	switch sp := sqlcRefund.(type) {
 	case *sqlc.Refund:
 		id = sp.ID
-		paymentIntentID = sp.PaymentIntentID
+		chargeID = sp.ChargeID
 		amount = sp.Amount
 		if sp.Reason != nil {
 			reason = *sp.Reason
 		}
 		status = enum.RefundStatus(sp.Status)
-		stripeID = sp.StripeID
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time
 	default:
@@ -48,10 +55,9 @@ func (r *Refund) ConvertFromSQLCRefund(sqlcRefund any) *Refund {
 	}
 
 	r.ID = id
-	r.PaymentIntentID = paymentIntentID
+	r.ChargeID = chargeID
 	r.Amount = amount
 	r.Reason = reason
-	r.StripeID = stripeID
 	r.Status = status
 	r.CreatedAt = createdAt
 	r.UpdatedAt = updatedAt

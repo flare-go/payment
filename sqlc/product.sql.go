@@ -13,11 +13,11 @@ import (
 
 const createProduct = `-- name: CreateProduct :one
 INSERT INTO products (
+    id,
     name,
     description,
     active,
-    metadata,
-    stripe_id
+    metadata
 ) VALUES (
              $1, $2, $3, $4, $5
          )
@@ -25,26 +25,26 @@ RETURNING id, created_at, updated_at
 `
 
 type CreateProductParams struct {
+	ID          string  `json:"id"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
 	Active      bool    `json:"active"`
 	Metadata    []byte  `json:"metadata"`
-	StripeID    string  `json:"stripeId"`
 }
 
 type CreateProductRow struct {
-	ID        uint64             `json:"id"`
+	ID        string             `json:"id"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
 }
 
 func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (*CreateProductRow, error) {
 	row := q.db.QueryRow(ctx, createProduct,
+		arg.ID,
 		arg.Name,
 		arg.Description,
 		arg.Active,
 		arg.Metadata,
-		arg.StripeID,
 	)
 	var i CreateProductRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -55,18 +55,18 @@ const deleteProduct = `-- name: DeleteProduct :exec
 DELETE FROM products WHERE id = $1
 `
 
-func (q *Queries) DeleteProduct(ctx context.Context, id uint64) error {
+func (q *Queries) DeleteProduct(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteProduct, id)
 	return err
 }
 
 const getProduct = `-- name: GetProduct :one
-SELECT id, name, description, active, metadata, stripe_id, created_at, updated_at
+SELECT id, name, description, active, metadata, created_at, updated_at
 FROM products
 WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetProduct(ctx context.Context, id uint64) (*Product, error) {
+func (q *Queries) GetProduct(ctx context.Context, id string) (*Product, error) {
 	row := q.db.QueryRow(ctx, getProduct, id)
 	var i Product
 	err := row.Scan(
@@ -75,7 +75,6 @@ func (q *Queries) GetProduct(ctx context.Context, id uint64) (*Product, error) {
 		&i.Description,
 		&i.Active,
 		&i.Metadata,
-		&i.StripeID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -83,7 +82,7 @@ func (q *Queries) GetProduct(ctx context.Context, id uint64) (*Product, error) {
 }
 
 const listProducts = `-- name: ListProducts :many
-SELECT id, name, description, active, metadata, stripe_id, created_at, updated_at
+SELECT id, name, description, active, metadata, created_at, updated_at
 FROM products
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
@@ -109,7 +108,6 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]*
 			&i.Description,
 			&i.Active,
 			&i.Metadata,
-			&i.StripeID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -129,19 +127,17 @@ SET name = $2,
     description = $3,
     active = $4,
     metadata = $5,
-    stripe_id = $6,
     updated_at = NOW()
 WHERE id = $1
 RETURNING created_at, updated_at
 `
 
 type UpdateProductParams struct {
-	ID          uint64  `json:"id"`
+	ID          string  `json:"id"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
 	Active      bool    `json:"active"`
 	Metadata    []byte  `json:"metadata"`
-	StripeID    string  `json:"stripeId"`
 }
 
 type UpdateProductRow struct {
@@ -156,9 +152,41 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (*
 		arg.Description,
 		arg.Active,
 		arg.Metadata,
-		arg.StripeID,
 	)
 	var i UpdateProductRow
 	err := row.Scan(&i.CreatedAt, &i.UpdatedAt)
 	return &i, err
+}
+
+const upsertProduct = `-- name: UpsertProduct :exec
+INSERT INTO products (
+    id, name, description, active, metadata
+) VALUES (
+             $1, $2, $3, $4, $5
+         )
+ON CONFLICT (id) DO UPDATE SET
+                                      name = EXCLUDED.name,
+                                      description = EXCLUDED.description,
+                                      active = EXCLUDED.active,
+                                      metadata = EXCLUDED.metadata,
+                                      updated_at = NOW()
+`
+
+type UpsertProductParams struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	Active      bool    `json:"active"`
+	Metadata    []byte  `json:"metadata"`
+}
+
+func (q *Queries) UpsertProduct(ctx context.Context, arg UpsertProductParams) error {
+	_, err := q.db.Exec(ctx, upsertProduct,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.Active,
+		arg.Metadata,
+	)
+	return err
 }

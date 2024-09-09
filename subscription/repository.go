@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,12 +21,13 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, tx pgx.Tx, subscription *models.Subscription) error
-	GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Subscription, error)
+	GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Subscription, error)
 	Update(ctx context.Context, tx pgx.Tx, subscription *models.Subscription) error
-	Cancel(ctx context.Context, tx pgx.Tx, id uint64, cancelAtPeriodEnd bool) error
-	List(ctx context.Context, tx pgx.Tx, customerID uint64, limit, offset uint64) ([]*models.Subscription, error)
+	Cancel(ctx context.Context, tx pgx.Tx, id string, cancelAtPeriodEnd bool) error
+	Delete(ctx context.Context, tx pgx.Tx, id string) error
+	List(ctx context.Context, tx pgx.Tx, customerID string, limit, offset uint64) ([]*models.Subscription, error)
 	GetExpiringSubscriptions(ctx context.Context, tx pgx.Tx, expirationDate time.Time) ([]*models.Subscription, error)
-	ListByStripeID(ctx context.Context, tx pgx.Tx, stripeID string) ([]*models.Subscription, error)
+	Upsert(ctx context.Context, tx pgx.Tx, subscription *models.PartialSubscription) error
 }
 
 type repository struct {
@@ -92,6 +94,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, subscription *models
 	}
 
 	if err := sqlc.New(r.conn).WithTx(tx).CreateSubscription(ctx, sqlc.CreateSubscriptionParams{
+		ID:                 subscription.ID,
 		CustomerID:         subscription.CustomerID,
 		PriceID:            subscription.PriceID,
 		Status:             sqlc.SubscriptionStatus(subscription.Status),
@@ -100,21 +103,20 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, subscription *models
 		CancelAtPeriodEnd:  subscription.CancelAtPeriodEnd,
 		TrialStart:         pgtype.Timestamptz{Time: trialStart},
 		TrialEnd:           pgtype.Timestamptz{Time: trialEnd},
-		StripeID:           subscription.StripeID,
 	}); err != nil {
 		return fmt.Errorf("failed to create subscription: %w", err)
 	}
 
-	cacheKey := fmt.Sprintf("subscription:%d", subscription.ID)
-	if err := r.cache.Set(ctx, cacheKey, subscription, 30*time.Minute); err != nil {
-		r.logger.Warn("Failed to cache new subscription", zap.Error(err), zap.Uint64("id", subscription.ID))
+	cacheKey := fmt.Sprintf("subscription:%s", subscription.ID)
+	if err := r.cache.Set(ctx, cacheKey, subscription); err != nil {
+		r.logger.Warn("Failed to cache new subscription", zap.Error(err), zap.String("id", subscription.ID))
 	}
 
 	return nil
 }
 
-func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models.Subscription, error) {
-	cacheKey := fmt.Sprintf("subscription:%d", id)
+func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id string) (*models.Subscription, error) {
+	cacheKey := fmt.Sprintf("subscription:%s", id)
 
 	subscription, release, err := r.getFromPool(ctx)
 	if err != nil {
@@ -124,7 +126,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 
 	found, err := r.cache.Get(ctx, cacheKey, subscription)
 	if err != nil {
-		r.logger.Warn("Failed to get subscription from cache", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to get subscription from cache", zap.Error(err), zap.String("id", id))
 	} else if found {
 		return subscription, nil
 	}
@@ -138,7 +140,7 @@ func (r *repository) GetByID(ctx context.Context, tx pgx.Tx, id uint64) (*models
 	*subscription = *models.NewSubscription().ConvertFromSQLCSubscription(sqlcSubscription)
 
 	if err = r.cache.Set(ctx, cacheKey, subscription, 30*time.Minute); err != nil {
-		r.logger.Warn("Failed to cache subscription", zap.Error(err), zap.Uint64("id", id))
+		r.logger.Warn("Failed to cache subscription", zap.Error(err), zap.String("id", id))
 	}
 
 	return subscription, nil
@@ -166,20 +168,23 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, subscription *models
 		CancelAtPeriodEnd:  subscription.CancelAtPeriodEnd,
 		TrialStart:         pgtype.Timestamptz{Time: trialStart},
 		TrialEnd:           pgtype.Timestamptz{Time: trialEnd},
-		StripeID:           subscription.StripeID,
 	}); err != nil {
 		return fmt.Errorf("failed to update subscription: %w", err)
 	}
 
-	cacheKey := fmt.Sprintf("subscription:%d", subscription.ID)
-	if err := r.cache.Set(ctx, cacheKey, subscription, 30*time.Minute); err != nil {
-		r.logger.Warn("Failed to update subscription in cache", zap.Error(err), zap.Uint64("id", subscription.ID))
+	cacheKey := fmt.Sprintf("subscription:%s", subscription.ID)
+	if err := r.cache.Set(ctx, cacheKey, subscription); err != nil {
+		r.logger.Warn("Failed to update subscription in cache", zap.Error(err), zap.String("id", subscription.ID))
 	}
 
 	return nil
 }
 
-func (r *repository) Cancel(ctx context.Context, tx pgx.Tx, id uint64, cancelAtPeriodEnd bool) error {
+func (r *repository) Delete(ctx context.Context, tx pgx.Tx, id string) error {
+	return sqlc.New(r.conn).WithTx(tx).DeleteSubscription(ctx, id)
+}
+
+func (r *repository) Cancel(ctx context.Context, tx pgx.Tx, id string, cancelAtPeriodEnd bool) error {
 	subscription, err := r.GetByID(ctx, tx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get subscription: %w", err)
@@ -193,12 +198,12 @@ func (r *repository) Cancel(ctx context.Context, tx pgx.Tx, id uint64, cancelAtP
 	return r.Update(ctx, tx, subscription)
 }
 
-func (r *repository) List(ctx context.Context, tx pgx.Tx, customerID uint64, limit, offset uint64) ([]*models.Subscription, error) {
-	cacheKey := fmt.Sprintf("subscriptions:customer:%d:limit:%d:offset:%d", customerID, limit, offset)
+func (r *repository) List(ctx context.Context, tx pgx.Tx, customerID string, limit, offset uint64) ([]*models.Subscription, error) {
+	cacheKey := fmt.Sprintf("subscriptions:customer:%s:limit:%d:offset:%d", customerID, limit, offset)
 	var cachedSubscriptions []*models.Subscription
 	found, err := r.cache.Get(ctx, cacheKey, &cachedSubscriptions)
 	if err != nil {
-		r.logger.Warn("Failed to get subscriptions from cache", zap.Error(err), zap.Uint64("customerID", customerID))
+		r.logger.Warn("Failed to get subscriptions from cache", zap.Error(err), zap.String("customerID", customerID))
 	} else if found {
 		return cachedSubscriptions, nil
 	}
@@ -224,16 +229,16 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, customerID uint64, lim
 		*subscription = *models.NewSubscription().ConvertFromSQLCSubscription(sqlcSubscription)
 		subscriptions = append(subscriptions, subscription)
 
-		singleCacheKey := fmt.Sprintf("subscription:%d", subscription.ID)
+		singleCacheKey := fmt.Sprintf("subscription:%s", subscription.ID)
 		if err = r.cache.Set(ctx, singleCacheKey, subscription, 30*time.Minute); err != nil {
-			r.logger.Warn("Failed to cache single subscription", zap.Error(err), zap.Uint64("id", subscription.ID))
+			r.logger.Warn("Failed to cache single subscription", zap.Error(err), zap.String("id", subscription.ID))
 		}
 
 		release()
 	}
 
-	if err = r.cache.Set(ctx, cacheKey, subscriptions, 5*time.Minute); err != nil {
-		r.logger.Warn("Failed to cache subscriptions list", zap.Error(err), zap.Uint64("customerID", customerID))
+	if err = r.cache.Set(ctx, cacheKey, subscriptions); err != nil {
+		r.logger.Warn("Failed to cache subscriptions list", zap.Error(err), zap.String("customerID", customerID))
 	}
 
 	return subscriptions, nil
@@ -272,16 +277,107 @@ func (r *repository) GetExpiringSubscriptions(ctx context.Context, tx pgx.Tx, ex
 	return subscriptions, nil
 }
 
-func (r *repository) ListByStripeID(ctx context.Context, tx pgx.Tx, stripeID string) ([]*models.Subscription, error) {
-	sqlcSubscriptions, err := sqlc.New(r.conn).WithTx(tx).ListSubscriptionsByStripeID(ctx, stripeID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions by Stripe ID: %w", err)
+func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, subscription *models.PartialSubscription) error {
+	query := `
+    INSERT INTO subscriptions (id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (id) DO UPDATE SET
+    `
+	args := []interface{}{subscription.ID}
+	updateClauses := []string{}
+	argIndex := 2
+
+	if subscription.CustomerID != nil {
+		args = append(args, *subscription.CustomerID)
+		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
 	}
 
-	subscriptions := make([]*models.Subscription, len(sqlcSubscriptions))
-	for _, sqlcSubscription := range sqlcSubscriptions {
-		subscriptions = append(subscriptions, models.NewSubscription().ConvertFromSQLCSubscription(sqlcSubscription))
+	if subscription.PriceID != nil {
+		args = append(args, *subscription.PriceID)
+		updateClauses = append(updateClauses, fmt.Sprintf("price_id = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
 	}
 
-	return subscriptions, nil
+	if subscription.Status != nil {
+		args = append(args, *subscription.Status)
+		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.CurrentPeriodStart != nil {
+		args = append(args, *subscription.CurrentPeriodStart)
+		updateClauses = append(updateClauses, fmt.Sprintf("current_period_start = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.CurrentPeriodEnd != nil {
+		args = append(args, *subscription.CurrentPeriodEnd)
+		updateClauses = append(updateClauses, fmt.Sprintf("current_period_end = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.CanceledAt != nil {
+		args = append(args, *subscription.CanceledAt)
+		updateClauses = append(updateClauses, fmt.Sprintf("canceled_at = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.CancelAtPeriodEnd != nil {
+		args = append(args, *subscription.CancelAtPeriodEnd)
+		updateClauses = append(updateClauses, fmt.Sprintf("cancel_at_period_end = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.TrialStart != nil {
+		args = append(args, *subscription.TrialStart)
+		updateClauses = append(updateClauses, fmt.Sprintf("trial_start = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.TrialEnd != nil {
+		args = append(args, *subscription.TrialEnd)
+		updateClauses = append(updateClauses, fmt.Sprintf("trial_end = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if subscription.CreatedAt != nil {
+		args = append(args, *subscription.CreatedAt)
+		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	args = append(args, time.Now())
+	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
+
+	if len(updateClauses) > 0 {
+		query += strings.Join(updateClauses, ", ")
+	}
+	query += " WHERE id = $1"
+
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to upsert subscription: %w", err)
+	}
+
+	return nil
 }

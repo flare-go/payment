@@ -13,10 +13,11 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, product *models.Product) error
-	GetByID(ctx context.Context, id uint64) (*models.Product, error)
+	GetByID(ctx context.Context, id string) (*models.Product, error)
 	Update(ctx context.Context, product *models.Product) error
-	Delete(ctx context.Context, id uint64) error
+	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, limit, offset uint64) ([]*models.Product, error)
+	Upsert(ctx context.Context, product *models.PartialProduct) error
 }
 
 type service struct {
@@ -39,7 +40,7 @@ func (s *service) Create(ctx context.Context, product *models.Product) error {
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.Product, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.Product, error) {
 	var product *models.Product
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -72,15 +73,15 @@ func (s *service) Update(ctx context.Context, product *models.Product) error {
 				existingProduct.Metadata[k] = v
 			}
 		}
-		if product.StripeID != "" {
-			existingProduct.StripeID = product.StripeID
+		if product.ID != "" {
+			existingProduct.ID = product.ID
 		}
 
 		return s.repo.Update(ctx, tx, existingProduct)
 	})
 }
 
-func (s *service) Delete(ctx context.Context, id uint64) error {
+func (s *service) Delete(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		return s.repo.Delete(ctx, tx, id)
 	})
@@ -94,4 +95,10 @@ func (s *service) List(ctx context.Context, limit, offset uint64) ([]*models.Pro
 		return err
 	})
 	return products, err
+}
+
+func (s *service) Upsert(ctx context.Context, product *models.PartialProduct) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, product)
+	})
 }

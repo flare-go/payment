@@ -15,16 +15,16 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, invoice *models.Invoice) error
-	GetByID(ctx context.Context, id uint64) (*models.Invoice, error)
+	GetByID(ctx context.Context, id string) (*models.Invoice, error)
 	Update(ctx context.Context, invoice *models.Invoice) error
-	List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.Invoice, error)
-	Delete(ctx context.Context, id uint64) error
-	PayInvoice(ctx context.Context, id uint64, amount float64) error
+	List(ctx context.Context, customerID string, limit, offset uint64) ([]*models.Invoice, error)
+	Delete(ctx context.Context, id string) error
+	PayInvoice(ctx context.Context, id string, amount float64) error
 	CreateInvoiceItem(ctx context.Context, item *models.InvoiceItem) error
 	UpdateInvoiceItem(ctx context.Context, item *models.InvoiceItem) error
-	DeleteInvoiceItem(ctx context.Context, id uint64) error
-	ListInvoiceItems(ctx context.Context, invoiceID uint64) ([]*models.InvoiceItem, error)
-	ListByStripeID(ctx context.Context, stripeID string) ([]*models.Invoice, error)
+	DeleteInvoiceItem(ctx context.Context, id string) error
+	ListInvoiceItems(ctx context.Context, invoiceID string) ([]*models.InvoiceItem, error)
+	Upsert(ctx context.Context, invoice *models.PartialInvoice) error
 }
 
 type service struct {
@@ -58,7 +58,7 @@ func (s *service) Create(ctx context.Context, invoice *models.Invoice) error {
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.Invoice, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.Invoice, error) {
 	var invoice *models.Invoice
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -85,11 +85,11 @@ func (s *service) Update(ctx context.Context, invoice *models.Invoice) error {
 		}
 
 		// Update only allowed fields
+		existingInvoice.ID = invoice.ID
 		existingInvoice.Status = invoice.Status
 		existingInvoice.AmountPaid = invoice.AmountPaid
 		existingInvoice.AmountRemaining = invoice.AmountRemaining
 		existingInvoice.PaidAt = invoice.PaidAt
-		existingInvoice.StripeID = invoice.StripeID
 
 		if err = s.repo.Update(ctx, tx, existingInvoice); err != nil {
 			return fmt.Errorf("failed to update invoice: %w", err)
@@ -99,7 +99,7 @@ func (s *service) Update(ctx context.Context, invoice *models.Invoice) error {
 	})
 }
 
-func (s *service) List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.Invoice, error) {
+func (s *service) List(ctx context.Context, customerID string, limit, offset uint64) ([]*models.Invoice, error) {
 	var invoices []*models.Invoice
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -112,7 +112,7 @@ func (s *service) List(ctx context.Context, customerID uint64, limit, offset uin
 	return invoices, err
 }
 
-func (s *service) Delete(ctx context.Context, id uint64) error {
+func (s *service) Delete(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		if err := s.repo.Delete(ctx, tx, id); err != nil {
 			return fmt.Errorf("failed to delete invoice: %w", err)
@@ -121,7 +121,7 @@ func (s *service) Delete(ctx context.Context, id uint64) error {
 	})
 }
 
-func (s *service) PayInvoice(ctx context.Context, id uint64, amount float64) error {
+func (s *service) PayInvoice(ctx context.Context, id string, amount float64) error {
 	return s.transactionManager.ExecuteSerializableTransaction(ctx, func(tx pgx.Tx) error {
 		invoice, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -218,7 +218,7 @@ func (s *service) UpdateInvoiceItem(ctx context.Context, item *models.InvoiceIte
 	})
 }
 
-func (s *service) DeleteInvoiceItem(ctx context.Context, id uint64) error {
+func (s *service) DeleteInvoiceItem(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		// 獲取要刪除的發票項目
 		item, err := s.repo.GetInvoiceItemByID(ctx, tx, id)
@@ -252,7 +252,7 @@ func (s *service) DeleteInvoiceItem(ctx context.Context, id uint64) error {
 	})
 }
 
-func (s *service) ListInvoiceItems(ctx context.Context, invoiceID uint64) ([]*models.InvoiceItem, error) {
+func (s *service) ListInvoiceItems(ctx context.Context, invoiceID string) ([]*models.InvoiceItem, error) {
 	var items []*models.InvoiceItem
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -265,15 +265,8 @@ func (s *service) ListInvoiceItems(ctx context.Context, invoiceID uint64) ([]*mo
 	return items, err
 }
 
-func (s *service) ListByStripeID(ctx context.Context, stripeID string) ([]*models.Invoice, error) {
-	var invoices []*models.Invoice
-	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
-		var err error
-		invoices, err = s.repo.ListByStripeID(ctx, tx, stripeID)
-		if err != nil {
-			return fmt.Errorf("failed to list invoices: %w", err)
-		}
-		return nil
+func (s *service) Upsert(ctx context.Context, invoice *models.PartialInvoice) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, invoice)
 	})
-	return invoices, err
 }

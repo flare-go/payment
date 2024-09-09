@@ -14,11 +14,12 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, paymentMethod *models.PaymentMethod) error
-	GetByID(ctx context.Context, id uint64) (*models.PaymentMethod, error)
+	GetByID(ctx context.Context, id string) (*models.PaymentMethod, error)
 	Update(ctx context.Context, paymentMethod *models.PaymentMethod) error
-	Delete(ctx context.Context, id uint64) error
-	List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.PaymentMethod, error)
-	SetDefault(ctx context.Context, customerID, paymentMethodID uint64) error
+	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, customerID string, limit, offset uint64) ([]*models.PaymentMethod, error)
+	SetDefault(ctx context.Context, customerID, paymentMethodID string) error
+	Upsert(ctx context.Context, paymentMethod *models.PartialPaymentMethod) error
 }
 
 type service struct {
@@ -51,7 +52,7 @@ func (s *service) Create(ctx context.Context, paymentMethod *models.PaymentMetho
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.PaymentMethod, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.PaymentMethod, error) {
 	var result *models.PaymentMethod
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		autoReleasePaymentMethod, err := s.repo.GetByID(ctx, tx, id)
@@ -73,19 +74,19 @@ func (s *service) Update(ctx context.Context, paymentMethod *models.PaymentMetho
 		}
 		defer existing.release()
 
+		existing.ID = paymentMethod.ID
 		existing.PaymentMethod.CardLast4 = paymentMethod.CardLast4
 		existing.PaymentMethod.CardBrand = paymentMethod.CardBrand
 		existing.PaymentMethod.CardExpMonth = paymentMethod.CardExpMonth
 		existing.PaymentMethod.CardExpYear = paymentMethod.CardExpYear
 		existing.PaymentMethod.BankAccountLast4 = paymentMethod.BankAccountLast4
 		existing.PaymentMethod.BankAccountBankName = paymentMethod.BankAccountBankName
-		existing.PaymentMethod.StripeID = paymentMethod.StripeID
 
 		return s.repo.Update(ctx, tx, existing.PaymentMethod)
 	})
 }
 
-func (s *service) Delete(ctx context.Context, id uint64) error {
+func (s *service) Delete(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		paymentMethod, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -101,7 +102,7 @@ func (s *service) Delete(ctx context.Context, id uint64) error {
 	})
 }
 
-func (s *service) List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.PaymentMethod, error) {
+func (s *service) List(ctx context.Context, customerID string, limit, offset uint64) ([]*models.PaymentMethod, error) {
 	var result []*models.PaymentMethod
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		autoReleasePaymentMethods, err := s.repo.List(ctx, tx, customerID, limit, offset)
@@ -115,7 +116,7 @@ func (s *service) List(ctx context.Context, customerID uint64, limit, offset uin
 	return result, err
 }
 
-func (s *service) SetDefault(ctx context.Context, customerID, paymentMethodID uint64) error {
+func (s *service) SetDefault(ctx context.Context, customerID, paymentMethodID string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		paymentMethods, err := s.repo.List(ctx, tx, customerID, 1000, 0)
 		if err != nil {
@@ -141,10 +142,16 @@ func (s *service) SetDefault(ctx context.Context, customerID, paymentMethodID ui
 		}
 
 		targetMethod.IsDefault = true
-		if err := s.repo.Update(ctx, tx, targetMethod); err != nil {
+		if err = s.repo.Update(ctx, tx, targetMethod); err != nil {
 			return fmt.Errorf("failed to set default payment method: %w", err)
 		}
 
 		return nil
+	})
+}
+
+func (s *service) Upsert(ctx context.Context, paymentMethod *models.PartialPaymentMethod) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, paymentMethod)
 	})
 }

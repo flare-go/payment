@@ -11,15 +11,24 @@ import (
 // Product 代表可訂閱或購買的產品
 // Product represents a product that can be subscribed to or purchased
 type Product struct {
-	ID          uint64            `json:"id"`
+	ID          string            `json:"id"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Active      bool              `json:"active"`
-	StripeID    string            `json:"stripe_id"`
 	Metadata    map[string]string `json:"metadata"`
 	Prices      []*Price          `json:"prices"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+}
+
+type PartialProduct struct {
+	ID          string
+	Name        *string
+	Description *string
+	Active      *bool
+	Metadata    *map[string]string
+	CreatedAt   *time.Time
+	UpdatedAt   *time.Time
 }
 
 func NewProduct() *Product {
@@ -29,8 +38,7 @@ func NewProduct() *Product {
 func (p *Product) ConvertFromSQLCProduct(sqlcProduct any) *Product {
 
 	var (
-		id                   uint64
-		name, desc, stripeID string
+		id, name, desc       string
 		active               bool
 		metadata             map[string]string
 		createdAt, updatedAt time.Time
@@ -43,7 +51,6 @@ func (p *Product) ConvertFromSQLCProduct(sqlcProduct any) *Product {
 		if sp.Description != nil {
 			desc = *sp.Description
 		}
-		stripeID = sp.StripeID
 		active = sp.Active
 		if err := json.Unmarshal(sp.Metadata, &metadata); err != nil {
 			log.Println("Error unmarshalling metadata:", err)
@@ -57,7 +64,6 @@ func (p *Product) ConvertFromSQLCProduct(sqlcProduct any) *Product {
 	p.ID = id
 	p.Name = name
 	p.Description = desc
-	p.StripeID = stripeID
 	p.Active = active
 	p.Metadata = metadata
 	p.CreatedAt = createdAt

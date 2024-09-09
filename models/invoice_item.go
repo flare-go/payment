@@ -5,8 +5,8 @@ import (
 )
 
 type InvoiceItem struct {
-	ID          uint64  `json:"id"`
-	InvoiceID   uint64  `json:"invoice_id"`
+	ID          string  `json:"id"`
+	InvoiceID   string  `json:"invoice_id"`
 	Amount      float64 `json:"amount"`
 	Description string  `json:"description"`
 }
@@ -17,9 +17,8 @@ func NewInvoiceItem() *InvoiceItem {
 
 func (item *InvoiceItem) ConvertFromSQLCInvoiceItem(sqlcInvoiceItem any) *InvoiceItem {
 
-	var id, invoiceID uint64
+	var id, invoiceID, desc string
 	var amount float64
-	var desc string
 
 	switch sp := sqlcInvoiceItem.(type) {
 	case *sqlc.InvoiceItem:

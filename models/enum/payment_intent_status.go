@@ -3,10 +3,11 @@ package enum
 type PaymentIntentStatus string
 
 const (
-	PaymentIntentStatusRequiresPaymentMethod PaymentIntentStatus = "REQUIRES_PAYMENT_METHOD"
-	PaymentIntentStatusRequiresConfirmation  PaymentIntentStatus = "REQUIRES_CONFIRMATION"
-	PaymentIntentStatusRequiresAction        PaymentIntentStatus = "REQUIRES_ACTION"
-	PaymentIntentStatusProcessing            PaymentIntentStatus = "PROCESSING"
-	PaymentIntentStatusSucceeded             PaymentIntentStatus = "SUCCEEDED"
-	PaymentIntentStatusCanceled              PaymentIntentStatus = "CANCELED"
+	PaymentIntentStatusRequiresPaymentMethod PaymentIntentStatus = "requires_payment_method"
+	PaymentIntentStatusRequiresConfirmation  PaymentIntentStatus = "requires_confirmation"
+	PaymentIntentStatusRequiresAction        PaymentIntentStatus = "requires_action"
+	PaymentIntentStatusProcessing            PaymentIntentStatus = "processing"
+	PaymentIntentStatusSucceeded             PaymentIntentStatus = "succeeded"
+	PaymentIntentStatusFailed                PaymentIntentStatus = "failed"
+	PaymentIntentStatusCanceled              PaymentIntentStatus = "canceled"
 )

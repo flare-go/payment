@@ -16,13 +16,14 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, subscription *models.Subscription) error
-	GetByID(ctx context.Context, id uint64) (*models.Subscription, error)
+	GetByID(ctx context.Context, id string) (*models.Subscription, error)
+	Delete(ctx context.Context, id string) error
 	Update(ctx context.Context, subscription *models.Subscription) error
-	Cancel(ctx context.Context, id uint64, cancelAtPeriodEnd bool) error
-	List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.Subscription, error)
-	Renew(ctx context.Context, id uint64) error
-	ListByStripeID(ctx context.Context, stripeID string) ([]*models.Subscription, error)
+	Cancel(ctx context.Context, id string, cancelAtPeriodEnd bool) error
+	List(ctx context.Context, customerID string, limit, offset uint64) ([]*models.Subscription, error)
+	Renew(ctx context.Context, id string) error
 	HandleExpiringSubscriptions(ctx context.Context) error
+	Upsert(ctx context.Context, subscription *models.PartialSubscription) error
 }
 
 type service struct {
@@ -46,7 +47,7 @@ func (s *service) Create(ctx context.Context, subscription *models.Subscription)
 	})
 }
 
-func (s *service) GetByID(ctx context.Context, id uint64) (*models.Subscription, error) {
+func (s *service) GetByID(ctx context.Context, id string) (*models.Subscription, error) {
 	var subscription *models.Subscription
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -64,6 +65,7 @@ func (s *service) Update(ctx context.Context, subscription *models.Subscription)
 		}
 
 		// 只更新允許修改的字段
+		existingSubscription.ID = subscription.ID
 		existingSubscription.PriceID = subscription.PriceID
 		existingSubscription.Status = subscription.Status
 		existingSubscription.CurrentPeriodStart = subscription.CurrentPeriodStart
@@ -71,13 +73,18 @@ func (s *service) Update(ctx context.Context, subscription *models.Subscription)
 		existingSubscription.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd
 		existingSubscription.TrialStart = subscription.TrialStart
 		existingSubscription.TrialEnd = subscription.TrialEnd
-		existingSubscription.StripeID = subscription.StripeID
 
 		return s.repo.Update(ctx, tx, existingSubscription)
 	})
 }
 
-func (s *service) Cancel(ctx context.Context, id uint64, cancelAtPeriodEnd bool) error {
+func (s *service) Delete(ctx context.Context, id string) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Delete(ctx, tx, id)
+	})
+}
+
+func (s *service) Cancel(ctx context.Context, id string, cancelAtPeriodEnd bool) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		subscription, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -92,7 +99,7 @@ func (s *service) Cancel(ctx context.Context, id uint64, cancelAtPeriodEnd bool)
 	})
 }
 
-func (s *service) List(ctx context.Context, customerID uint64, limit, offset uint64) ([]*models.Subscription, error) {
+func (s *service) List(ctx context.Context, customerID string, limit, offset uint64) ([]*models.Subscription, error) {
 	var subscriptions []*models.Subscription
 	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -102,7 +109,7 @@ func (s *service) List(ctx context.Context, customerID uint64, limit, offset uin
 	return subscriptions, err
 }
 
-func (s *service) Renew(ctx context.Context, id uint64) error {
+func (s *service) Renew(ctx context.Context, id string) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		subscription, err := s.repo.GetByID(ctx, tx, id)
 		if err != nil {
@@ -171,7 +178,7 @@ func (s *service) HandleExpiringSubscriptions(ctx context.Context) error {
 			if err != nil {
 				s.logger.Error("Failed to process expiring subscription",
 					zap.Error(err),
-					zap.Uint64("subscriptionID", subscription.ID))
+					zap.String("subscriptionID", subscription.ID))
 				// 可以選擇繼續處理其他訂閱，或者中斷整個過程
 				// return err
 			}
@@ -181,12 +188,8 @@ func (s *service) HandleExpiringSubscriptions(ctx context.Context) error {
 	})
 }
 
-func (s *service) ListByStripeID(ctx context.Context, stripeID string) ([]*models.Subscription, error) {
-	var subscriptions []*models.Subscription
-	err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
-		var err error
-		subscriptions, err = s.repo.ListByStripeID(ctx, tx, stripeID)
-		return err
+func (s *service) Upsert(ctx context.Context, subscription *models.PartialSubscription) error {
+	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
+		return s.repo.Upsert(ctx, tx, subscription)
 	})
-	return subscriptions, err
 }

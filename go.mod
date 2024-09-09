@@ -1,6 +1,6 @@
 module goflare.io/payment
 
-go 1.23.0
+go 1.23.1
 
 require (
 	github.com/google/wire v0.6.0
@@ -8,7 +8,7 @@ require (
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/spf13/viper v1.19.0
-	github.com/stripe/stripe-go/v79 v79.9.0
+	github.com/stripe/stripe-go/v79 v79.10.0
 	go.uber.org/zap v1.27.0
 	goflare.io/ember v1.0.8
 	goflare.io/ignite v1.0.4
@@ -54,9 +54,9 @@ require (
 	go.opentelemetry.io/otel/trace v1.29.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.26.0 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
-	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect

@@ -5,7 +5,6 @@ import (
 	"goflare.io/payment"
 	"goflare.io/payment/models"
 	"net/http"
-	"strconv"
 )
 
 type CustomerHandler interface {
@@ -43,10 +42,7 @@ func (ch *customerHandler) CreateCustomer(c echo.Context) error {
 
 // GetCustomer handles GET /customers/:id
 func (ch *customerHandler) GetCustomer(c echo.Context) error {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid customer ID"})
-	}
+	id := c.Param("id")
 
 	customer, err := ch.Payment.GetCustomer(c.Request().Context(), id)
 	if err != nil {
@@ -58,10 +54,7 @@ func (ch *customerHandler) GetCustomer(c echo.Context) error {
 
 // UpdateCustomer handles PUT /customers/:id
 func (ch *customerHandler) UpdateCustomer(c echo.Context) error {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid customer ID"})
-	}
+	id := c.Param("id")
 
 	var customer models.Customer
 	if err := c.Bind(&customer); err != nil {
@@ -69,7 +62,7 @@ func (ch *customerHandler) UpdateCustomer(c echo.Context) error {
 	}
 	customer.ID = id
 
-	if err = ch.Payment.UpdateCustomerBalance(c.Request().Context(), &customer); err != nil {
+	if err := ch.Payment.UpdateCustomerBalance(c.Request().Context(), &customer); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update customer"})
 	}
 
@@ -78,12 +71,9 @@ func (ch *customerHandler) UpdateCustomer(c echo.Context) error {
 
 // DeleteCustomer handles DELETE /customers/:id
 func (ch *customerHandler) DeleteCustomer(c echo.Context) error {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid customer ID"})
-	}
+	id := c.Param("id")
 
-	if err = ch.Payment.DeleteCustomer(c.Request().Context(), id); err != nil {
+	if err := ch.Payment.DeleteCustomer(id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete customer"})
 	}
 
