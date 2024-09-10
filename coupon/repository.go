@@ -1,16 +1,16 @@
-// repository/coupon/repository.go
-
 package coupon
 
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/jackc/pgx/v5"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
-	"strings"
-	"time"
 )
 
 type Repository interface {
@@ -28,10 +28,10 @@ func NewRepository(conn driver.PostgresPool) Repository {
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, coupon *models.PartialCoupon) error {
 	query := `
-    INSERT INTO coupons (id, name, amount_off, percent_off, currency, duration, duration_in_months, max_redemptions, times_redeemed, valid, created_at, updated_at, redeem_by)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-    ON CONFLICT (id) DO UPDATE SET
-    `
+   INSERT INTO coupons (id, name, amount_off, percent_off, currency, duration, duration_in_months, max_redemptions, times_redeemed, valid, created_at, updated_at, redeem_by)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+   ON CONFLICT (id) DO UPDATE SET
+   `
 	args := []interface{}{coupon.ID}
 	var updateClauses []string
 	argIndex := 2

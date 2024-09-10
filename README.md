@@ -171,4 +171,4 @@ docker run -p 8080:8080 payment-service
 
 ## 聯絡方式
 
-如有任何問題或建議，請聯繫 [your-email@example.com](mailto:your-email@example.com)。
+如有任何問題或建議，請聯繫 [support@goflare.io](mailto:support@goflare.io)。

@@ -23,10 +23,6 @@
         "sql_package": "pgx/v5",
         "overrides": [
           {
-            "column": "*.user_id",
-            "go_type": "uint64"
-          },
-          {
             "column": "*.unit_amount",
             "go_type": "float64"
           },

@@ -39,11 +39,9 @@ SET balance = balance + $2,
 WHERE id = $1;
 
 -- name: UpsertCustomer :exec
-INSERT INTO customers (
-   id, user_id, balance
-) VALUES (
-             $1, $2, $3
-         )
+INSERT INTO customers (id, user_id, balance, updated_at)
+VALUES ($1, sqlc.narg('user_id'), sqlc.narg('balance'), $3)
 ON CONFLICT (id) DO UPDATE SET
-                                      balance = EXCLUDED.balance,
-                                      updated_at = NOW();
+                               user_id = COALESCE(sqlc.narg('user_id'), customers.user_id),
+                               balance = COALESCE(sqlc.narg('balance'), customers.balance),
+                               updated_at = $3;

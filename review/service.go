@@ -1,18 +1,14 @@
-// service/coupon/service.go
-
-package coupon
+package review
 
 import (
 	"context"
-
 	"github.com/jackc/pgx/v5"
-
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 )
 
 type Service interface {
-	Upsert(ctx context.Context, coupon *models.PartialCoupon) error
+	Upsert(ctx context.Context, coupon *models.PartialReview) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -28,9 +24,9 @@ func NewService(repo Repository, tm *driver.TransactionManager) Service {
 	}
 }
 
-func (s *service) Upsert(ctx context.Context, coupon *models.PartialCoupon) error {
+func (s *service) Upsert(ctx context.Context, review *models.PartialReview) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
-		return s.repo.Upsert(ctx, tx, coupon)
+		return s.repo.Upsert(ctx, tx, review)
 	})
 }
 

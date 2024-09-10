@@ -25,6 +25,7 @@ type Querier interface {
 	CreateProduct(ctx context.Context, arg CreateProductParams) (*CreateProductRow, error)
 	CreateRefund(ctx context.Context, arg CreateRefundParams) error
 	CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) error
+	DeleteCheckOutSession(ctx context.Context, id string) error
 	DeleteCoupon(ctx context.Context, id string) error
 	DeleteCustomer(ctx context.Context, id string) error
 	DeleteDiscount(ctx context.Context, id string) error
@@ -32,13 +33,18 @@ type Querier interface {
 	DeleteInvoice(ctx context.Context, id string) error
 	// RETURNING id, invoice_id, amount, description, created_at, updated_at;
 	DeleteInvoiceItem(ctx context.Context, id string) error
+	DeletePaymentLink(ctx context.Context, id string) error
 	// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 	DeletePaymentMethod(ctx context.Context, id string) error
 	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
 	DeletePrice(ctx context.Context, id string) (string, error)
 	DeleteProduct(ctx context.Context, id string) error
+	DeletePromotionCodes(ctx context.Context, id string) error
+	DeleteQuote(ctx context.Context, id string) error
 	DeleteRefund(ctx context.Context, id string) error
+	DeleteReviews(ctx context.Context, id string) error
 	DeleteSubscription(ctx context.Context, id string) error
+	DeleteTaxRate(ctx context.Context, id string) error
 	GetCouponByID(ctx context.Context, id string) (*Coupon, error)
 	GetCustomer(ctx context.Context, dollar_1 *string) (*GetCustomerRow, error)
 	GetDiscountByID(ctx context.Context, id string) (*Discount, error)

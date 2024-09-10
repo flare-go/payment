@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
 	"reflect"
-	"strings"
 	"time"
 
 	"goflare.io/ember"
@@ -83,7 +83,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, customer *models.Cus
 
 	sqlcCustomer, err := sqlc.New(r.conn).WithTx(tx).CreateCustomer(ctx, sqlc.CreateCustomerParams{
 		ID:      customer.ID,
-		UserID:  customer.UserID,
+		UserID:  int32(customer.UserID),
 		Balance: customer.Balance,
 	})
 	if err != nil {
@@ -228,64 +228,58 @@ func (r *repository) UpdateBalance(ctx context.Context, tx pgx.Tx, id string, ba
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, customer *models.PartialCustomer) error {
-	query := `
-    INSERT INTO customers (id, email, name, phone, balance)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (id) DO UPDATE SET
-    `
 
-	args := []interface{}{customer.ID}
-	var updateClauses []string
-	argIndex := 2
-
-	if customer.Email != nil {
-		args = append(args, *customer.Email)
-		updateClauses = append(updateClauses, fmt.Sprintf("email = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	var userID *int32
+	if customer.UserID != nil {
+		u := int32(*customer.UserID)
+		userID = &u
 	}
-
-	if customer.Name != nil {
-		args = append(args, *customer.Name)
-		updateClauses = append(updateClauses, fmt.Sprintf("name = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if customer.Phone != nil {
-		args = append(args, *customer.Phone)
-		updateClauses = append(updateClauses, fmt.Sprintf("phone = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if customer.Balance != nil {
-		args = append(args, *customer.Balance)
-		updateClauses = append(updateClauses, fmt.Sprintf("balance = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-	args = append(args, time.Now())
-
-	query += strings.Join(updateClauses, ", ")
-	query += " WHERE id = $1"
-
-	_, err := tx.Exec(ctx, query, args...)
-	if err != nil {
-		return fmt.Errorf("failed to upsert customer: %w", err)
-	}
-
-	// 更新或清除緩存
-	cacheKey := fmt.Sprintf("customer:%s", customer.ID)
-	if err := r.cache.Delete(ctx, cacheKey); err != nil {
-		r.logger.Warn("Failed to delete customer from cache", zap.Error(err), zap.String("id", customer.ID))
+	if err := sqlc.New(r.conn).WithTx(tx).UpsertCustomer(ctx, sqlc.UpsertCustomerParams{
+		ID:        customer.ID,
+		UserID:    userID,
+		Balance:   customer.Balance,
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now()},
+	}); err != nil {
+		return err
 	}
 
 	return nil
 }
+
+//func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, customer *models.PartialCustomer) error {
+//	query := `
+//    INSERT INTO customers (id, balance, updated_at)
+//    VALUES ($1, $2, $3)
+//    ON CONFLICT (id) DO UPDATE SET
+//    `
+//
+//	args := []any{customer.ID}
+//	var updateClauses []string
+//	argIndex := 2
+//
+//	if customer.Balance != nil {
+//		args = append(args, *customer.Balance)
+//		updateClauses = append(updateClauses, fmt.Sprintf("balance = $%d", argIndex))
+//		argIndex++
+//	} else {
+//		args = append(args, nil)
+//	}
+//
+//	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
+//	args = append(args, time.Now())
+//
+//	query += strings.Join(updateClauses, ", ")
+//	query += " WHERE id = $1"
+//
+//	if _, err := tx.Exec(ctx, query, args...); err != nil {
+//		return fmt.Errorf("failed to upsert customer: %w", err)
+//	}
+//
+//	// 更新或清除緩存
+//	cacheKey := fmt.Sprintf("customer:%s", customer.ID)
+//	if err := r.cache.Delete(ctx, cacheKey); err != nil {
+//		r.logger.Warn("Failed to delete customer from cache", zap.Error(err), zap.String("id", customer.ID))
+//	}
+//
+//	return nil
+//}

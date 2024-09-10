@@ -51,4 +51,6 @@ type Payment interface {
 	ListRefunds(ctx context.Context, chargeID string) ([]*models.Refund, error)
 
 	HandleStripeWebhook(ctx context.Context, payload []byte, signature string) error // Interacts with Stripe
+
+	Close()
 }

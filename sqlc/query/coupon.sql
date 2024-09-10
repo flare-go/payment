@@ -36,21 +36,43 @@ DELETE FROM coupons WHERE id = $1;
 
 -- name: UpsertCoupon :exec
 INSERT INTO coupons (
-    id, name, amount_off, percent_off, currency, duration,
-    duration_in_months, max_redemptions, times_redeemed, valid, redeem_by
+    id,
+    name,
+    currency,
+    duration,
+    amount_off,
+    percent_off,
+    duration_in_months,
+    max_redemptions,
+    times_redeemed,
+    valid,
+    redeem_by,
+    created_at,
+    updated_at
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+             $1,
+             sqlc.narg('name'),
+             sqlc.narg('currency'),
+             sqlc.narg('duration'),
+             sqlc.narg('amount_off'),
+             sqlc.narg('percent_off'),
+             sqlc.narg('duration_in_months'),
+             sqlc.narg('max_redemptions'),
+             $2,
+             $3,
+             $4,
+             $5,
+             $6
          )
-ON CONFLICT (id)
-    DO UPDATE SET
-                  name = EXCLUDED.name,
-                  amount_off = EXCLUDED.amount_off,
-                  percent_off = EXCLUDED.percent_off,
-                  currency = EXCLUDED.currency,
-                  duration = EXCLUDED.duration,
-                  duration_in_months = EXCLUDED.duration_in_months,
-                  max_redemptions = EXCLUDED.max_redemptions,
-                  times_redeemed = EXCLUDED.times_redeemed,
-                  valid = EXCLUDED.valid,
-                  redeem_by = EXCLUDED.redeem_by,
-                  updated_at = NOW();
+ON CONFLICT (id) DO UPDATE SET
+                               name = COALESCE(sqlc.narg('name'), coupons.name),
+                               currency = COALESCE(sqlc.narg('currency'), coupons.currency),
+                               duration = COALESCE(sqlc.narg('duration'), coupons.duration),
+                               amount_off = COALESCE(sqlc.narg('amount_off'), coupons.amount_off),
+                               percent_off = COALESCE(sqlc.narg('percent_off'), coupons.percent_off),
+                               duration_in_months = COALESCE(sqlc.narg('duration_in_months'), coupons.duration_in_months),
+                               max_redemptions = COALESCE(sqlc.narg('max_redemptions'), coupons.max_redemptions),
+                               times_redeemed = $2,
+                               valid = $3,
+                               redeem_by = $4,
+                               updated_at = $6;

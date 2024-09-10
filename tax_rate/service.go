@@ -1,6 +1,4 @@
-// service/coupon/service.go
-
-package coupon
+package tax_rate
 
 import (
 	"context"
@@ -12,7 +10,7 @@ import (
 )
 
 type Service interface {
-	Upsert(ctx context.Context, coupon *models.PartialCoupon) error
+	Upsert(ctx context.Context, coupon *models.PartialTaxRate) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -28,9 +26,9 @@ func NewService(repo Repository, tm *driver.TransactionManager) Service {
 	}
 }
 
-func (s *service) Upsert(ctx context.Context, coupon *models.PartialCoupon) error {
+func (s *service) Upsert(ctx context.Context, tr *models.PartialTaxRate) error {
 	return s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
-		return s.repo.Upsert(ctx, tx, coupon)
+		return s.repo.Upsert(ctx, tx, tr)
 	})
 }
 

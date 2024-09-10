@@ -10,6 +10,12 @@ DROP INDEX IF EXISTS idx_payment_intents_stripe_id;
 DROP INDEX IF EXISTS idx_invoice_items_invoice_id;
 
 -- 刪除表
+DROP TABLE IF EXISTS reviews;
+DROP TABLE IF EXISTS tax_rates;
+DROP TABLE IF EXISTS payment_links;
+DROP TABLE IF EXISTS quotes;
+DROP TABLE IF EXISTS checkout_sessions;
+DROP TABLE IF EXISTS promotion_codes;
 DROP TABLE IF EXISTS discounts;
 DROP TABLE IF EXISTS coupons;
 DROP TABLE IF EXISTS disputes;

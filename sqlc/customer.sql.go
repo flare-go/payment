@@ -24,7 +24,7 @@ RETURNING id, created_at, updated_at
 
 type CreateCustomerParams struct {
 	ID      string `json:"id"`
-	UserID  uint64 `json:"userId"`
+	UserID  int32  `json:"userId"`
 	Balance int64  `json:"balance"`
 }
 
@@ -60,7 +60,7 @@ WHERE c.id = $1
 
 type GetCustomerRow struct {
 	ID        string             `json:"id"`
-	UserID    uint64             `json:"userId"`
+	UserID    int32              `json:"userId"`
 	Balance   int64              `json:"balance"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
@@ -99,7 +99,7 @@ type ListCustomersParams struct {
 
 type ListCustomersRow struct {
 	ID        string             `json:"id"`
-	UserID    uint64             `json:"userId"`
+	UserID    int32              `json:"userId"`
 	Balance   int64              `json:"balance"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
@@ -170,23 +170,27 @@ func (q *Queries) UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerB
 }
 
 const upsertCustomer = `-- name: UpsertCustomer :exec
-INSERT INTO customers (
-   id, user_id, balance
-) VALUES (
-             $1, $2, $3
-         )
+INSERT INTO customers (id, user_id, balance, updated_at)
+VALUES ($1, $2, $4, $3)
 ON CONFLICT (id) DO UPDATE SET
-                                      balance = EXCLUDED.balance,
-                                      updated_at = NOW()
+                               user_id = COALESCE($2, customers.user_id),
+                               balance = COALESCE($4, customers.balance),
+                               updated_at = $3
 `
 
 type UpsertCustomerParams struct {
-	ID      string `json:"id"`
-	UserID  uint64 `json:"userId"`
-	Balance int64  `json:"balance"`
+	ID        string             `json:"id"`
+	UserID    *int32             `json:"userId"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+	Balance   *int64             `json:"balance"`
 }
 
 func (q *Queries) UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) error {
-	_, err := q.db.Exec(ctx, upsertCustomer, arg.ID, arg.UserID, arg.Balance)
+	_, err := q.db.Exec(ctx, upsertCustomer,
+		arg.ID,
+		arg.UserID,
+		arg.UpdatedAt,
+		arg.Balance,
+	)
 	return err
 }

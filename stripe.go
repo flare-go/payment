@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"go.uber.org/zap"
 	"goflare.io/payment/charge"
+	"goflare.io/payment/checkout_session"
 	"goflare.io/payment/coupon"
 	"goflare.io/payment/discount"
 	"goflare.io/payment/disputes"
 	"goflare.io/payment/event"
+	"goflare.io/payment/payment_link"
+	"goflare.io/payment/promotion_code"
+	"goflare.io/payment/quote"
+	"goflare.io/payment/review"
+	"goflare.io/payment/tax_rate"
 	"golang.org/x/sync/errgroup"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/stripe/stripe-go/v79"
@@ -33,33 +38,36 @@ import (
 )
 
 type StripePayment struct {
-	client               *client.API
-	charge               charge.Service
-	coupon               coupon.Service
-	customerService      customer.Service
-	discount             discount.Service
-	dispute              disputes.Service
-	event                event.Service
-	productService       product.Service
-	priceService         price.Service
-	subscriptionService  subscription.Service
-	invoiceService       invoice.Service
-	paymentMethodService payment_method.Service
-	paymentIntentService payment_intent.Service
-	refundService        refund.Service
+	client          *client.API
+	charge          charge.Service
+	checkoutSession checkout_session.Service
+	coupon          coupon.Service
+	customer        customer.Service
+	discount        discount.Service
+	dispute         disputes.Service
+	event           event.Service
+	invoice         invoice.Service
+	paymentIntent   payment_intent.Service
+	paymentLink     payment_link.Service
+	paymentMethod   payment_method.Service
+	price           price.Service
+	product         product.Service
+	promotionCode   promotion_code.Service
+	quote           quote.Service
+	refund          refund.Service
+	review          review.Service
+	subscription    subscription.Service
+	taxRate         tax_rate.Service
 
-	eventChan   chan *stripe.Event
-	workerCount int
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	logger      *zap.Logger
+	dispatcher *Dispatcher
+	logger     *zap.Logger
 }
 
 func NewStripePayment(config *config.Config,
 	cs customer.Service,
 	charge charge.Service,
 	coupon coupon.Service,
+	checkoutSession checkout_session.Service,
 	discount discount.Service,
 	dispute disputes.Service,
 	event event.Service,
@@ -68,63 +76,42 @@ func NewStripePayment(config *config.Config,
 	ss subscription.Service,
 	is invoice.Service,
 	pms payment_method.Service,
+	paymentLink payment_link.Service,
 	pis payment_intent.Service,
+	pcs promotion_code.Service,
 	rs refund.Service,
+	review review.Service,
+	taxRate tax_rate.Service,
+	quote quote.Service,
 	logger *zap.Logger) Payment {
-	ctx, cancel := context.WithCancel(context.Background())
 	sp := &StripePayment{
-		client:               client.New(config.Stripe.SecretKey, nil),
-		charge:               charge,
-		coupon:               coupon,
-		customerService:      cs,
-		discount:             discount,
-		dispute:              dispute,
-		event:                event,
-		productService:       ps,
-		priceService:         prs,
-		subscriptionService:  ss,
-		invoiceService:       is,
-		paymentMethodService: pms,
-		paymentIntentService: pis,
-		refundService:        rs,
-
-		eventChan:   make(chan *stripe.Event, 100), // 緩衝區大小可以根據需求調整
-		workerCount: 10,                            // 可以根據需求調整
-		ctx:         ctx,
-		cancel:      cancel,
-		logger:      logger,
+		client:          client.New(config.Stripe.SecretKey, nil),
+		charge:          charge,
+		coupon:          coupon,
+		checkoutSession: checkoutSession,
+		customer:        cs,
+		discount:        discount,
+		dispute:         dispute,
+		event:           event,
+		product:         ps,
+		price:           prs,
+		subscription:    ss,
+		invoice:         is,
+		paymentMethod:   pms,
+		paymentLink:     paymentLink,
+		promotionCode:   pcs,
+		paymentIntent:   pis,
+		quote:           quote,
+		review:          review,
+		taxRate:         taxRate,
+		refund:          rs,
+		logger:          logger,
 	}
 
-	sp.startWorkers()
+	sp.dispatcher = NewDispatcher(10, 100, sp) // 10 workers, 100 job queue size
+	sp.dispatcher.Run()
 
 	return sp
-}
-
-func (sp *StripePayment) startWorkers() {
-	sp.wg.Add(sp.workerCount)
-	for i := 0; i < sp.workerCount; i++ {
-		go sp.eventWorker()
-	}
-}
-
-func (sp *StripePayment) eventWorker() {
-	defer sp.wg.Done()
-	for {
-		select {
-		case e, ok := <-sp.eventChan:
-			if !ok {
-				return
-			}
-			if err := sp.processEvent(sp.ctx, e); err != nil {
-				sp.logger.Error("Error processing event",
-					zap.Error(err),
-					zap.String("event_type", string(e.Type)),
-					zap.String("event_id", e.ID))
-			}
-		case <-sp.ctx.Done():
-			return
-		}
-	}
 }
 
 func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) error {
@@ -136,96 +123,170 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 		start := time.Now()
 
 		switch event.Type {
+		// 客戶相關事件
 		case "customer.created", "customer.updated", "customer.deleted":
 			var customerModel stripe.Customer
 			if err := json.Unmarshal(event.Data.Raw, &customerModel); err != nil {
-				return fmt.Errorf("failed to unmarshal customer data: %w", err)
+				return fmt.Errorf("解析客戶數據失敗: %w", err)
 			}
 			handleErr = sp.handleCustomerEvent(ctx, &customerModel, event.Type)
 
-		case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
+		// 訂閱相關事件
+		case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted",
+			"customer.subscription.trial_will_end", "customer.subscription.pending_update_applied",
+			"customer.subscription.pending_update_expired", "customer.subscription.paused",
+			"customer.subscription.resumed":
 			var subscriptionModel stripe.Subscription
 			if err := json.Unmarshal(event.Data.Raw, &subscriptionModel); err != nil {
-				return fmt.Errorf("failed to unmarshal subscription data: %w", err)
+				return fmt.Errorf("解析訂閱數據失敗: %w", err)
 			}
 			handleErr = sp.handleSubscriptionEvent(ctx, &subscriptionModel, event.Type)
 
-		case "invoice.created", "invoice.updated", "invoice.paid", "invoice.payment_failed":
+		// 發票相關事件
+		case "invoice.created", "invoice.updated", "invoice.paid", "invoice.payment_failed",
+			"invoice.finalized", "invoice.sent", "invoice.upcoming", "invoice.voided":
 			var invoiceModel stripe.Invoice
 			if err := json.Unmarshal(event.Data.Raw, &invoiceModel); err != nil {
-				return fmt.Errorf("failed to unmarshal invoice data: %w", err)
+				return fmt.Errorf("解析發票數據失敗: %w", err)
 			}
 			handleErr = sp.handleInvoiceEvent(ctx, &invoiceModel, event.Type)
 
-		case "payment_intent.created", "payment_intent.succeeded", "payment_intent.payment_failed", "payment_intent.canceled":
+		// 支付意圖相關事件
+		case "payment_intent.created", "payment_intent.succeeded", "payment_intent.payment_failed",
+			"payment_intent.canceled", "payment_intent.processing", "payment_intent.requires_action":
 			var paymentIntentModel stripe.PaymentIntent
 			if err := json.Unmarshal(event.Data.Raw, &paymentIntentModel); err != nil {
-				return fmt.Errorf("failed to unmarshal payment intent data: %w", err)
+				return fmt.Errorf("解析支付意圖數據失敗: %w", err)
 			}
 			handleErr = sp.handlePaymentIntentEvent(ctx, &paymentIntentModel)
 
-		case "charge.succeeded", "charge.failed", "charge.refunded":
+		// 收費相關事件
+		case "charge.succeeded", "charge.failed", "charge.refunded", "charge.captured", "charge.expired":
 			var chargeModel stripe.Charge
 			if err := json.Unmarshal(event.Data.Raw, &chargeModel); err != nil {
-				return fmt.Errorf("failed to unmarshal charge data: %w", err)
+				return fmt.Errorf("解析收費數據失敗: %w", err)
 			}
 			handleErr = sp.handleChargeEvent(ctx, &chargeModel)
 
-		case "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed":
+		// 爭議相關事件
+		case "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed",
+			"charge.dispute.funds_reinstated", "charge.dispute.funds_withdrawn":
 			var disputeModel stripe.Dispute
 			if err := json.Unmarshal(event.Data.Raw, &disputeModel); err != nil {
-				return fmt.Errorf("failed to unmarshal dispute data: %w", err)
+				return fmt.Errorf("解析爭議數據失敗: %w", err)
 			}
 			handleErr = sp.handleDisputeEvent(ctx, &disputeModel, event.Type)
 
+		// 產品相關事件
 		case "product.created", "product.updated", "product.deleted":
 			var productModel stripe.Product
 			if err := json.Unmarshal(event.Data.Raw, &productModel); err != nil {
-				return fmt.Errorf("failed to unmarshal product data: %w", err)
+				return fmt.Errorf("解析產品數據失敗: %w", err)
 			}
 			handleErr = sp.handleProductEvent(ctx, &productModel, event.Type)
 
+		// 價格相關事件
 		case "price.created", "price.updated", "price.deleted":
 			var priceModel stripe.Price
 			if err := json.Unmarshal(event.Data.Raw, &priceModel); err != nil {
-				return fmt.Errorf("failed to unmarshal price data: %w", err)
+				return fmt.Errorf("解析價格數據失敗: %w", err)
 			}
 			handleErr = sp.handlePriceEvent(ctx, &priceModel, event.Type)
 
+		// 支付方式相關事件
 		case "payment_method.attached", "payment_method.updated", "payment_method.detached":
 			var paymentMethodModel stripe.PaymentMethod
 			if err := json.Unmarshal(event.Data.Raw, &paymentMethodModel); err != nil {
-				return fmt.Errorf("failed to unmarshal payment method data: %w", err)
+				return fmt.Errorf("解析支付方式數據失敗: %w", err)
 			}
 			handleErr = sp.handlePaymentMethodEvent(ctx, &paymentMethodModel, event.Type)
 
+		// 優惠券相關事件
 		case "coupon.created", "coupon.updated", "coupon.deleted":
 			var couponModel stripe.Coupon
 			if err := json.Unmarshal(event.Data.Raw, &couponModel); err != nil {
-				return fmt.Errorf("failed to unmarshal coupon data: %w", err)
+				return fmt.Errorf("解析優惠券數據失敗: %w", err)
 			}
 			handleErr = sp.handleCouponEvent(ctx, &couponModel, event.Type)
 
+		// 折扣相關事件
 		case "customer.discount.created", "customer.discount.updated", "customer.discount.deleted":
 			var discountModel stripe.Discount
 			if err := json.Unmarshal(event.Data.Raw, &discountModel); err != nil {
-				return fmt.Errorf("failed to unmarshal discount data: %w", err)
+				return fmt.Errorf("解析折扣數據失敗: %w", err)
 			}
 			handleErr = sp.handleDiscountEvent(ctx, &discountModel, event.Type)
 
+		// 結帳會話相關事件
+		case "checkout.session.completed", "checkout.session.async_payment_succeeded",
+			"checkout.session.async_payment_failed", "checkout.session.expired":
+			var checkoutSessionModel stripe.CheckoutSession
+			if err := json.Unmarshal(event.Data.Raw, &checkoutSessionModel); err != nil {
+				return fmt.Errorf("解析結帳會話數據失敗: %w", err)
+			}
+			handleErr = sp.handleCheckoutSessionEvent(ctx, &checkoutSessionModel, event.Type)
+
+		// 退款相關事件
+		case "refund.created", "refund.updated":
+			var refundModel stripe.Refund
+			if err := json.Unmarshal(event.Data.Raw, &refundModel); err != nil {
+				return fmt.Errorf("解析退款數據失敗: %w", err)
+			}
+			handleErr = sp.handleRefundEvent(ctx, &refundModel)
+
+		// 促銷代碼相關事件
+		case "promotion_code.created", "promotion_code.updated":
+			var promotionCodeModel stripe.PromotionCode
+			if err := json.Unmarshal(event.Data.Raw, &promotionCodeModel); err != nil {
+				return fmt.Errorf("解析促銷代碼數據失敗: %w", err)
+			}
+			handleErr = sp.handlePromotionCodeEvent(ctx, &promotionCodeModel, event.Type)
+
+		// 報價相關事件
+		case "quote.created", "quote.finalized", "quote.accepted", "quote.canceled":
+			var quoteModel stripe.Quote
+			if err := json.Unmarshal(event.Data.Raw, &quoteModel); err != nil {
+				return fmt.Errorf("解析報價數據失敗: %w", err)
+			}
+			handleErr = sp.handleQuoteEvent(ctx, &quoteModel, event.Type)
+
+		// 支付連結相關事件
+		case "payment_link.created", "payment_link.updated":
+			var paymentLinkModel stripe.PaymentLink
+			if err := json.Unmarshal(event.Data.Raw, &paymentLinkModel); err != nil {
+				return fmt.Errorf("解析支付連結數據失敗: %w", err)
+			}
+			handleErr = sp.handlePaymentLinkEvent(ctx, &paymentLinkModel, event.Type)
+
+		// 稅率相關事件
+		case "tax_rate.sql.created", "tax_rate.sql.updated":
+			var taxRateModel stripe.TaxRate
+			if err := json.Unmarshal(event.Data.Raw, &taxRateModel); err != nil {
+				return fmt.Errorf("解析稅率數據失敗: %w", err)
+			}
+			handleErr = sp.handleTaxRateEvent(ctx, &taxRateModel, event.Type)
+
+		// 審查相關事件
+		case "review.opened", "review.closed":
+			var reviewModel stripe.Review
+			if err := json.Unmarshal(event.Data.Raw, &reviewModel); err != nil {
+				return fmt.Errorf("解析審查數據失敗: %w", err)
+			}
+			handleErr = sp.handleReviewEvent(ctx, &reviewModel, event.Type)
+
 		default:
-			sp.logger.Info("Unhandled event type",
+			sp.logger.Info("未處理的事件類型",
 				zap.String("type", string(event.Type)),
 				zap.String("event_id", event.ID))
 			return nil
 		}
 
 		if handleErr != nil {
-			return fmt.Errorf("error handling event %s: %w", event.Type, handleErr)
+			return fmt.Errorf("處理事件 %s 時發生錯誤: %w", event.Type, handleErr)
 		}
 
 		duration := time.Since(start)
-		sp.logger.Info("Event processed successfully",
+		sp.logger.Info("事件處理成功",
 			zap.String("event_type", string(event.Type)),
 			zap.String("event_id", event.ID),
 			zap.Duration("duration", duration))
@@ -240,7 +301,7 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 
 	// 標記事件為已處理
 	if err := sp.event.MarkEventAsProcessed(ctx, event.ID); err != nil {
-		return fmt.Errorf("failed to mark event as processed: %w", err)
+		return fmt.Errorf("標記事件為已處理失敗: %w", err)
 	}
 
 	return nil
@@ -266,7 +327,7 @@ func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, emai
 		Name:   name,
 		Email:  email,
 	}
-	if err = sp.customerService.Create(ctx, customerModel); err != nil {
+	if err = sp.customer.Create(ctx, customerModel); err != nil {
 		return fmt.Errorf("failed to create local customer record: %w", err)
 	}
 
@@ -275,7 +336,7 @@ func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, emai
 
 // GetCustomer retrieves a customer from the local database
 func (sp *StripePayment) GetCustomer(ctx context.Context, customerID string) (*models.Customer, error) {
-	return sp.customerService.GetByID(ctx, customerID)
+	return sp.customer.GetByID(ctx, customerID)
 }
 
 // UpdateCustomerBalance updates a customer in Stripe and in the local database
@@ -289,7 +350,7 @@ func (sp *StripePayment) UpdateCustomerBalance(ctx context.Context, updateCustom
 		return fmt.Errorf("failed to update Stripe customer: %w", err)
 	}
 
-	if err := sp.customerService.UpdateBalance(ctx, updateCustomer.ID, uint64(updateCustomer.Balance)); err != nil {
+	if err := sp.customer.UpdateBalance(ctx, updateCustomer.ID, uint64(updateCustomer.Balance)); err != nil {
 		return fmt.Errorf("failed to update local customer record: %w", err)
 	}
 
@@ -320,12 +381,12 @@ func (sp *StripePayment) CreateProduct(req models.Product) error {
 }
 
 func (sp *StripePayment) GetProductWithActivePrices(ctx context.Context, productID string) (*models.Product, error) {
-	productModel, err := sp.productService.GetByID(ctx, productID)
+	productModel, err := sp.product.GetByID(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Stripe product: %w", err)
 	}
 
-	prices, err := sp.priceService.ListActive(ctx, productID)
+	prices, err := sp.price.ListActive(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Stripe prices: %w", err)
 	}
@@ -336,12 +397,12 @@ func (sp *StripePayment) GetProductWithActivePrices(ctx context.Context, product
 
 // GetProductWithAllPrices retrieves a product from the local database
 func (sp *StripePayment) GetProductWithAllPrices(ctx context.Context, productID string) (*models.Product, error) {
-	productModel, err := sp.productService.GetByID(ctx, productID)
+	productModel, err := sp.product.GetByID(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Stripe product: %w", err)
 	}
 
-	prices, err := sp.priceService.List(ctx, productID)
+	prices, err := sp.price.List(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Stripe prices: %w", err)
 	}
@@ -378,7 +439,7 @@ func (sp *StripePayment) DeleteProduct(productID string) error {
 
 // ListProducts lists all products from the local database
 func (sp *StripePayment) ListProducts(ctx context.Context) ([]*models.Product, error) {
-	return sp.productService.List(ctx, 1000, 0) // Assuming a large limit, you might want to implement pagination
+	return sp.product.List(ctx, 1000, 0) // Assuming a large limit, you might want to implement pagination
 }
 
 // CreatePrice creates a new price in Stripe and in the local database
@@ -439,7 +500,7 @@ func (sp *StripePayment) CreateSubscription(customerID, priceID string) error {
 
 // GetSubscription retrieves a subscription from the local database
 func (sp *StripePayment) GetSubscription(ctx context.Context, subscriptionID string) (*models.Subscription, error) {
-	return sp.subscriptionService.GetByID(ctx, subscriptionID)
+	return sp.subscription.GetByID(ctx, subscriptionID)
 }
 
 // UpdateSubscription updates a subscription in Stripe and in the local database
@@ -469,7 +530,7 @@ func (sp *StripePayment) CancelSubscription(subscriptionID string, cancelAtPerio
 
 // ListSubscriptions lists all subscriptions for a customer from the local database
 func (sp *StripePayment) ListSubscriptions(ctx context.Context, customerID string) ([]*models.Subscription, error) {
-	return sp.subscriptionService.List(ctx, customerID, 1000, 0)
+	return sp.subscription.List(ctx, customerID, 1000, 0)
 	// Assuming a large limit, you might want to implement pagination
 }
 
@@ -490,7 +551,7 @@ func (sp *StripePayment) CreateInvoice(customerID, subscriptionID string) error 
 
 // GetInvoice retrieves an invoice from the local database
 func (sp *StripePayment) GetInvoice(ctx context.Context, invoiceID string) (*models.Invoice, error) {
-	return sp.invoiceService.GetByID(ctx, invoiceID)
+	return sp.invoice.GetByID(ctx, invoiceID)
 }
 
 // PayInvoice pays an invoice in Stripe and updates the local database
@@ -505,13 +566,13 @@ func (sp *StripePayment) PayInvoice(invoiceID string) error {
 
 // ListInvoices lists all invoices for a customer from the local database
 func (sp *StripePayment) ListInvoices(ctx context.Context, customerID string) ([]*models.Invoice, error) {
-	return sp.invoiceService.List(ctx, customerID, 1000, 0)
+	return sp.invoice.List(ctx, customerID, 1000, 0)
 	// Assuming a large limit, you might want to implement pagination
 }
 
 // GetPaymentMethod retrieves a payment method from the local database
 func (sp *StripePayment) GetPaymentMethod(ctx context.Context, paymentMethodID string) (*models.PaymentMethod, error) {
-	return sp.paymentMethodService.GetByID(ctx, paymentMethodID)
+	return sp.paymentMethod.GetByID(ctx, paymentMethodID)
 }
 
 // DeletePaymentMethod deletes a payment method from Stripe and from the local database
@@ -521,7 +582,7 @@ func (sp *StripePayment) DeletePaymentMethod(ctx context.Context, paymentMethodI
 		return fmt.Errorf("failed to detach Stripe payment method: %w", err)
 	}
 
-	if err := sp.paymentMethodService.Delete(ctx, paymentMethodID); err != nil {
+	if err := sp.paymentMethod.Delete(ctx, paymentMethodID); err != nil {
 		return fmt.Errorf("failed to delete local payment method record: %w", err)
 	}
 
@@ -530,7 +591,7 @@ func (sp *StripePayment) DeletePaymentMethod(ctx context.Context, paymentMethodI
 
 // ListPaymentMethods lists all payment methods for a customer from the local database
 func (sp *StripePayment) ListPaymentMethods(ctx context.Context, customerID string) ([]*models.PaymentMethod, error) {
-	return sp.paymentMethodService.List(ctx, customerID, 1000, 0)
+	return sp.paymentMethod.List(ctx, customerID, 1000, 0)
 	// Assuming a large limit, you might want to implement pagination
 }
 
@@ -553,7 +614,7 @@ func (sp *StripePayment) CreatePaymentIntent(customerID, paymentMethodID string,
 
 // GetPaymentIntent retrieves a payment intent from the local database
 func (sp *StripePayment) GetPaymentIntent(ctx context.Context, paymentIntentID string) (*models.PaymentIntent, error) {
-	return sp.paymentIntentService.GetByID(ctx, paymentIntentID)
+	return sp.paymentIntent.GetByID(ctx, paymentIntentID)
 }
 
 // ConfirmPaymentIntent confirms a payment intent in Stripe and updates the local database
@@ -581,11 +642,11 @@ func (sp *StripePayment) CancelPaymentIntent(paymentIntentID string) error {
 }
 
 func (sp *StripePayment) ListPaymentIntent(ctx context.Context, limit, offset uint64) ([]*models.PaymentIntent, error) {
-	return sp.paymentIntentService.List(ctx, limit, offset)
+	return sp.paymentIntent.List(ctx, limit, offset)
 }
 
 func (sp *StripePayment) ListPaymentIntentByCustomerID(ctx context.Context, customerID string, limit, offset uint64) ([]*models.PaymentIntent, error) {
-	return sp.paymentIntentService.ListByCustomer(ctx, customerID, limit, offset)
+	return sp.paymentIntent.ListByCustomer(ctx, customerID, limit, offset)
 }
 
 func (sp *StripePayment) CreateRefund(paymentIntentID, reason string, amount uint64) error {
@@ -604,7 +665,7 @@ func (sp *StripePayment) CreateRefund(paymentIntentID, reason string, amount uin
 
 // GetRefund retrieves a refund from the local database
 func (sp *StripePayment) GetRefund(ctx context.Context, refundID string) (*models.Refund, error) {
-	return sp.refundService.GetByID(ctx, refundID)
+	return sp.refund.GetByID(ctx, refundID)
 }
 
 // UpdateRefund updates a refund in Stripe and in the local database
@@ -623,7 +684,7 @@ func (sp *StripePayment) UpdateRefund(refundID, reason string) error {
 
 // ListRefunds lists all refunds for a payment intent from the local database
 func (sp *StripePayment) ListRefunds(ctx context.Context, chargeID string) ([]*models.Refund, error) {
-	return sp.refundService.ListByChargeID(ctx, chargeID)
+	return sp.refund.ListByChargeID(ctx, chargeID)
 }
 
 // HandleStripeWebhook handles Stripe webhook events
@@ -633,26 +694,17 @@ func (sp *StripePayment) HandleStripeWebhook(ctx context.Context, payload []byte
 		return fmt.Errorf("failed to verify webhook signature: %w", err)
 	}
 
-	// 檢查事件是否已經處理過
 	processed, err := sp.event.IsEventProcessed(ctx, stripeEvent.ID)
 	if err != nil {
 		return fmt.Errorf("failed to check event status: %w", err)
 	}
 	if processed {
-		// 事件已處理，直接返回
 		return nil
 	}
 
-	// 使用 select 語句來處理通道可能已滿的情況
-	select {
-	case sp.eventChan <- &stripeEvent:
-		// 事件成功加入處理隊列
-	case <-time.After(5 * time.Second):
-		// 如果 5 秒內無法將事件加入隊列，記錄錯誤並返回
-		sp.logger.Error("Failed to queue event for processing",
-			zap.String("event_id", stripeEvent.ID),
-			zap.String("event_type", string(stripeEvent.Type)))
-		return fmt.Errorf("event queue is full, unable to process event %s", stripeEvent.ID)
+	sp.dispatcher.jobQueue <- WorkRequest{
+		Event: &stripeEvent,
+		Ctx:   ctx,
 	}
 
 	return nil
@@ -683,9 +735,9 @@ func (sp *StripePayment) handleCustomerEvent(ctx context.Context, customer *stri
 
 	switch eventType {
 	case "customer.created", "customer.updated":
-		return sp.customerService.Upsert(ctx, partialCustomer)
+		return sp.customer.Upsert(ctx, partialCustomer)
 	case "customer.deleted":
-		return sp.customerService.Delete(ctx, customer.ID)
+		return sp.customer.Delete(ctx, customer.ID)
 	default:
 		return fmt.Errorf("unexpected customer event type: %s", eventType)
 	}
@@ -722,9 +774,9 @@ func (sp *StripePayment) handleSubscriptionEvent(ctx context.Context, subscripti
 		"customer.subscription.trial_will_end", "customer.subscription.pending_update_applied",
 		"customer.subscription.pending_update_expired", "customer.subscription.paused",
 		"customer.subscription.resumed":
-		return sp.subscriptionService.Upsert(ctx, partialSubscription)
+		return sp.subscription.Upsert(ctx, partialSubscription)
 	case "customer.subscription.deleted":
-		return sp.subscriptionService.Delete(ctx, subscription.ID)
+		return sp.subscription.Delete(ctx, subscription.ID)
 	default:
 		return fmt.Errorf("unexpected subscription event type: %s", eventType)
 	}
@@ -778,9 +830,9 @@ func (sp *StripePayment) handleInvoiceEvent(ctx context.Context, invoice *stripe
 	switch eventType {
 	case "invoice.created", "invoice.updated", "invoice.finalized",
 		"invoice.payment_succeeded", "invoice.payment_failed", "invoice.sent":
-		return sp.invoiceService.Upsert(ctx, partialInvoice)
+		return sp.invoice.Upsert(ctx, partialInvoice)
 	case "invoice.deleted":
-		return sp.invoiceService.Delete(ctx, invoice.ID)
+		return sp.invoice.Delete(ctx, invoice.ID)
 	default:
 		return fmt.Errorf("unexpected invoice event type: %s", eventType)
 	}
@@ -825,7 +877,7 @@ func (sp *StripePayment) handlePaymentIntentEvent(ctx context.Context, paymentIn
 		partialPaymentIntent.CreatedAt = &createdAt
 	}
 
-	return sp.paymentIntentService.Upsert(ctx, partialPaymentIntent)
+	return sp.paymentIntent.Upsert(ctx, partialPaymentIntent)
 }
 
 func (sp *StripePayment) handleChargeEvent(ctx context.Context, charge *stripe.Charge) error {
@@ -867,34 +919,35 @@ func (sp *StripePayment) handleChargeEvent(ctx context.Context, charge *stripe.C
 	return sp.charge.Upsert(ctx, partialCharge)
 }
 
-func (sp *StripePayment) handleRefundEvent(ctx context.Context, charge *stripe.Charge) error {
-	for _, refundData := range charge.Refunds.Data {
-		partialRefund := &models.PartialRefund{
-			ID: refundData.ID,
-		}
-
-		partialRefund.ChargeID = &charge.ID
-		if refundData.Amount > 0 {
-			amount := float64(refundData.Amount)
-			partialRefund.Amount = &amount
-		}
-		if refundData.Status != "" {
-			status := enum.RefundStatus(refundData.Status)
-			partialRefund.Status = &status
-		}
-		if refundData.Reason != "" {
-			reason := string(refundData.Reason)
-			partialRefund.Reason = &reason
-		}
-		if refundData.Created > 0 {
-			createdAt := time.Unix(refundData.Created, 0)
-			partialRefund.CreatedAt = &createdAt
-		}
-
-		if err := sp.refundService.Upsert(ctx, partialRefund); err != nil {
-			return fmt.Errorf("failed to process refund: %w", err)
-		}
+func (sp *StripePayment) handleRefundEvent(ctx context.Context, refund *stripe.Refund) error {
+	partialRefund := &models.PartialRefund{
+		ID: refund.ID,
 	}
+
+	if refund.Charge != nil {
+		partialRefund.ChargeID = &refund.Charge.ID
+	}
+	if refund.Amount > 0 {
+		amount := float64(refund.Amount)
+		partialRefund.Amount = &amount
+	}
+	if refund.Status != "" {
+		status := enum.RefundStatus(refund.Status)
+		partialRefund.Status = &status
+	}
+	if refund.Reason != "" {
+		reason := string(refund.Reason)
+		partialRefund.Reason = &reason
+	}
+	if refund.Created > 0 {
+		createdAt := time.Unix(refund.Created, 0)
+		partialRefund.CreatedAt = &createdAt
+	}
+
+	if err := sp.refund.Upsert(ctx, partialRefund); err != nil {
+		return fmt.Errorf("處理退款失敗: %w", err)
+	}
+
 	return nil
 }
 
@@ -950,9 +1003,9 @@ func (sp *StripePayment) handleProductEvent(ctx context.Context, product *stripe
 
 	switch eventType {
 	case "product.created", "product.updated":
-		return sp.productService.Upsert(ctx, partialProduct)
+		return sp.product.Upsert(ctx, partialProduct)
 	case "product.deleted":
-		return sp.productService.Delete(ctx, product.ID)
+		return sp.product.Delete(ctx, product.ID)
 	default:
 		return fmt.Errorf("unexpected product event type: %s", eventType)
 	}
@@ -992,9 +1045,9 @@ func (sp *StripePayment) handlePriceEvent(ctx context.Context, price *stripe.Pri
 
 	switch eventType {
 	case "price.created", "price.updated":
-		return sp.priceService.Upsert(ctx, partialPrice)
+		return sp.price.Upsert(ctx, partialPrice)
 	case "price.deleted":
-		return sp.priceService.Delete(ctx, price.ID)
+		return sp.price.Delete(ctx, price.ID)
 	default:
 		return fmt.Errorf("unexpected price event type: %s", eventType)
 	}
@@ -1049,9 +1102,9 @@ func (sp *StripePayment) handlePaymentMethodEvent(ctx context.Context, paymentMe
 
 	switch eventType {
 	case "payment_method.attached", "payment_method.updated":
-		return sp.paymentMethodService.Upsert(ctx, partialPaymentMethod)
+		return sp.paymentMethod.Upsert(ctx, partialPaymentMethod)
 	case "payment_method.detached":
-		return sp.paymentMethodService.Delete(ctx, paymentMethod.ID)
+		return sp.paymentMethod.Delete(ctx, paymentMethod.ID)
 	default:
 		return fmt.Errorf("unexpected payment method event type: %s", eventType)
 	}
@@ -1139,4 +1192,234 @@ func (sp *StripePayment) handleDiscountEvent(ctx context.Context, discount *stri
 	default:
 		return fmt.Errorf("unexpected discount event type: %s", eventType)
 	}
+}
+
+func (sp *StripePayment) handlePromotionCodeEvent(ctx context.Context, promotionCode *stripe.PromotionCode, eventType stripe.EventType) error {
+	partialPromotionCode := &models.PartialPromotionCode{
+		ID: promotionCode.ID,
+	}
+
+	if promotionCode.Code != "" {
+		partialPromotionCode.Code = &promotionCode.Code
+	}
+	if promotionCode.Coupon != nil {
+		partialPromotionCode.CouponID = &promotionCode.Coupon.ID
+	}
+	if promotionCode.Customer != nil {
+		partialPromotionCode.CustomerID = &promotionCode.Customer.ID
+	}
+	partialPromotionCode.Active = &promotionCode.Active
+	if promotionCode.MaxRedemptions > 0 {
+		maxRedemptions := int(promotionCode.MaxRedemptions)
+		partialPromotionCode.MaxRedemptions = &maxRedemptions
+	}
+	timesRedeemed := int(promotionCode.TimesRedeemed)
+	partialPromotionCode.TimesRedeemed = &timesRedeemed
+	if promotionCode.ExpiresAt > 0 {
+		expiresAt := time.Unix(promotionCode.ExpiresAt, 0)
+		partialPromotionCode.ExpiresAt = &expiresAt
+	}
+	if promotionCode.Created > 0 {
+		createdAt := time.Unix(promotionCode.Created, 0)
+		partialPromotionCode.CreatedAt = &createdAt
+	}
+
+	switch eventType {
+	case "promotion_code.created", "promotion_code.updated":
+		return sp.promotionCode.Upsert(ctx, partialPromotionCode)
+	default:
+		return fmt.Errorf("unexpected promotion code event type: %s", eventType)
+	}
+}
+
+func (sp *StripePayment) handleCheckoutSessionEvent(ctx context.Context, session *stripe.CheckoutSession, eventType stripe.EventType) error {
+	partialSession := &models.PartialCheckoutSession{
+		ID: session.ID,
+	}
+
+	if session.Customer != nil {
+		partialSession.CustomerID = &session.Customer.ID
+	}
+	if session.PaymentIntent != nil {
+		partialSession.PaymentIntentID = &session.PaymentIntent.ID
+	}
+	status := string(session.Status)
+	partialSession.Status = &status
+	mode := string(session.Mode)
+	partialSession.Mode = &mode
+	partialSession.SuccessURL = &session.SuccessURL
+	partialSession.CancelURL = &session.CancelURL
+	amountTotal := session.AmountTotal
+	partialSession.AmountTotal = &amountTotal
+	currency := string(session.Currency)
+	partialSession.Currency = &currency
+	if session.Created > 0 {
+		createdAt := time.Unix(session.Created, 0)
+		partialSession.CreatedAt = &createdAt
+	}
+
+	switch eventType {
+	case "checkout.session.completed", "checkout.session.async_payment_succeeded",
+		"checkout.session.async_payment_failed", "checkout.session.expired":
+		return sp.checkoutSession.Upsert(ctx, partialSession)
+	default:
+		return fmt.Errorf("unexpected checkout session event type: %s", eventType)
+	}
+}
+
+func (sp *StripePayment) handleQuoteEvent(ctx context.Context, quote *stripe.Quote, eventType stripe.EventType) error {
+	partialQuote := &models.PartialQuote{
+		ID: quote.ID,
+	}
+
+	if quote.Customer != nil {
+		partialQuote.CustomerID = &quote.Customer.ID
+	}
+	status := string(quote.Status)
+	partialQuote.Status = &status
+
+	amountTotal := quote.AmountTotal
+	partialQuote.AmountTotal = &amountTotal
+
+	currency := string(quote.Currency)
+	partialQuote.Currency = &currency
+
+	if quote.ExpiresAt > 0 {
+		validUntil := time.Unix(quote.ExpiresAt, 0)
+		partialQuote.ValidUntil = &validUntil
+	}
+
+	// Stripe的Quote模型中沒有直接的AcceptedAt字段，
+	// 從StatusTransitions中獲取，如果存在的話
+	if quote.StatusTransitions != nil && quote.StatusTransitions.AcceptedAt > 0 {
+		acceptedAt := time.Unix(quote.StatusTransitions.AcceptedAt, 0)
+		partialQuote.AcceptedAt = &acceptedAt
+	}
+
+	// CanceledAt也可以從StatusTransitions中獲取
+	if quote.StatusTransitions != nil && quote.StatusTransitions.CanceledAt > 0 {
+		canceledAt := time.Unix(quote.StatusTransitions.CanceledAt, 0)
+		partialQuote.CanceledAt = &canceledAt
+	}
+
+	if quote.Created > 0 {
+		createdAt := time.Unix(quote.Created, 0)
+		partialQuote.CreatedAt = &createdAt
+	}
+
+	switch eventType {
+	case "quote.created", "quote.finalized", "quote.accepted", "quote.canceled":
+		return sp.quote.Upsert(ctx, partialQuote)
+	default:
+		return fmt.Errorf("unexpected quote event type: %s", eventType)
+	}
+}
+
+func (sp *StripePayment) handlePaymentLinkEvent(ctx context.Context, paymentLink *stripe.PaymentLink, eventType stripe.EventType) error {
+	partialPaymentLink := &models.PartialPaymentLink{
+		ID: paymentLink.ID,
+	}
+
+	partialPaymentLink.Active = &paymentLink.Active
+	partialPaymentLink.URL = &paymentLink.URL
+
+	if paymentLink.LineItems != nil && len(paymentLink.LineItems.Data) > 0 {
+		totalAmount := int64(0)
+		for _, item := range paymentLink.LineItems.Data {
+			totalAmount += item.AmountSubtotal
+		}
+		partialPaymentLink.Amount = &totalAmount
+	}
+
+	currency := string(paymentLink.Currency)
+	partialPaymentLink.Currency = &currency
+
+	switch eventType {
+	case "payment_link.created", "payment_link.updated":
+		return sp.paymentLink.Upsert(ctx, partialPaymentLink)
+	default:
+		return fmt.Errorf("unexpected payment link event type: %s", eventType)
+	}
+}
+
+func (sp *StripePayment) handleTaxRateEvent(ctx context.Context, taxRate *stripe.TaxRate, eventType stripe.EventType) error {
+	partialTaxRate := &models.PartialTaxRate{
+		ID: taxRate.ID,
+	}
+
+	partialTaxRate.DisplayName = &taxRate.DisplayName
+	if taxRate.Description != "" {
+		partialTaxRate.Description = &taxRate.Description
+	}
+	if taxRate.Jurisdiction != "" {
+		partialTaxRate.Jurisdiction = &taxRate.Jurisdiction
+	}
+	percentage := taxRate.Percentage
+	partialTaxRate.Percentage = &percentage
+	partialTaxRate.Inclusive = &taxRate.Inclusive
+	partialTaxRate.Active = &taxRate.Active
+	if taxRate.Created > 0 {
+		createdAt := time.Unix(taxRate.Created, 0)
+		partialTaxRate.CreatedAt = &createdAt
+	}
+
+	switch eventType {
+	case "tax_rate.created", "tax_rate.updated":
+		return sp.taxRate.Upsert(ctx, partialTaxRate)
+	default:
+		return fmt.Errorf("unexpected tax rate event type: %s", eventType)
+	}
+}
+
+func (sp *StripePayment) handleReviewEvent(ctx context.Context, review *stripe.Review, eventType stripe.EventType) error {
+	partialReview := &models.PartialReview{
+		ID: review.ID,
+	}
+
+	if review.PaymentIntent != nil {
+		partialReview.PaymentIntentID = &review.PaymentIntent.ID
+	}
+	reason := string(review.Reason)
+	partialReview.Reason = &reason
+
+	// 根據 Open 字段設置狀態
+	var status string
+	if review.Open {
+		status = "open"
+	} else {
+		status = "closed"
+	}
+	partialReview.Status = &status
+
+	if review.Created > 0 {
+		createdAt := time.Unix(review.Created, 0)
+		partialReview.CreatedAt = &createdAt
+		// 使用 Created 時間作為 OpenedAt
+		partialReview.OpenedAt = &createdAt
+	}
+
+	// 如果 Review 已關閉，設置 ClosedAt
+	if !review.Open {
+		closedAt := time.Now()
+		partialReview.ClosedAt = &closedAt
+	}
+
+	// ClosedReason
+	if review.ClosedReason != "" {
+		closedReason := string(review.ClosedReason)
+		partialReview.ClosedReason = &closedReason
+	}
+
+	switch eventType {
+	case "review.opened", "review.closed":
+		return sp.review.Upsert(ctx, partialReview)
+	default:
+		return fmt.Errorf("unexpected review event type: %s", eventType)
+	}
+}
+
+func (sp *StripePayment) Close() {
+	sp.logger.Info("Initiating graceful shutdown of workers and dispatcher")
+	sp.dispatcher.Stop() // 停止 dispatcher 和 workers
+	sp.logger.Info("StripePayment successfully shutdown")
 }

@@ -474,6 +474,20 @@ type Charge struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
 }
 
+type CheckoutSession struct {
+	ID              string             `json:"id"`
+	CustomerID      *string            `json:"customerId"`
+	PaymentIntentID *string            `json:"paymentIntentId"`
+	Status          string             `json:"status"`
+	Mode            string             `json:"mode"`
+	SuccessUrl      string             `json:"successUrl"`
+	CancelUrl       string             `json:"cancelUrl"`
+	AmountTotal     int64              `json:"amountTotal"`
+	Currency        string             `json:"currency"`
+	CreatedAt       pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
+}
+
 type Coupon struct {
 	ID               string             `json:"id"`
 	Name             string             `json:"name"`
@@ -492,7 +506,7 @@ type Coupon struct {
 
 type Customer struct {
 	ID        string             `json:"id"`
-	UserID    uint64             `json:"userId"`
+	UserID    int32              `json:"userId"`
 	Balance   int64              `json:"balance"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
@@ -565,6 +579,16 @@ type PaymentIntent struct {
 	UpdatedAt        pgtype.Timestamptz  `json:"updatedAt"`
 }
 
+type PaymentLink struct {
+	ID        string             `json:"id"`
+	Active    bool               `json:"active"`
+	Url       string             `json:"url"`
+	Amount    float64            `json:"amount"`
+	Currency  string             `json:"currency"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+}
+
 type PaymentMethod struct {
 	ID                  string             `json:"id"`
 	CustomerID          string             `json:"customerId"`
@@ -604,6 +628,32 @@ type Product struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
 }
 
+type PromotionCode struct {
+	ID             string             `json:"id"`
+	Code           string             `json:"code"`
+	CouponID       string             `json:"couponId"`
+	CustomerID     *string            `json:"customerId"`
+	Active         bool               `json:"active"`
+	MaxRedemptions *int32             `json:"maxRedemptions"`
+	TimesRedeemed  int32              `json:"timesRedeemed"`
+	ExpiresAt      pgtype.Timestamptz `json:"expiresAt"`
+	CreatedAt      pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt      pgtype.Timestamptz `json:"updatedAt"`
+}
+
+type Quote struct {
+	ID          string             `json:"id"`
+	CustomerID  string             `json:"customerId"`
+	Status      string             `json:"status"`
+	AmountTotal int64              `json:"amountTotal"`
+	Currency    string             `json:"currency"`
+	ValidUntil  pgtype.Timestamptz `json:"validUntil"`
+	AcceptedAt  pgtype.Timestamptz `json:"acceptedAt"`
+	CanceledAt  pgtype.Timestamptz `json:"canceledAt"`
+	CreatedAt   pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt   pgtype.Timestamptz `json:"updatedAt"`
+}
+
 type Refund struct {
 	ID        string             `json:"id"`
 	ChargeID  string             `json:"chargeId"`
@@ -612,6 +662,17 @@ type Refund struct {
 	Reason    *string            `json:"reason"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
+}
+
+type Review struct {
+	ID              string             `json:"id"`
+	PaymentIntentID *string            `json:"paymentIntentId"`
+	Reason          string             `json:"reason"`
+	Status          string             `json:"status"`
+	OpenedAt        pgtype.Timestamptz `json:"openedAt"`
+	ClosedAt        pgtype.Timestamptz `json:"closedAt"`
+	CreatedAt       pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
 }
 
 type Subscription struct {
@@ -627,4 +688,16 @@ type Subscription struct {
 	TrialEnd           pgtype.Timestamptz `json:"trialEnd"`
 	CreatedAt          pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt          pgtype.Timestamptz `json:"updatedAt"`
+}
+
+type TaxRate struct {
+	ID           string             `json:"id"`
+	DisplayName  string             `json:"displayName"`
+	Description  *string            `json:"description"`
+	Jurisdiction *string            `json:"jurisdiction"`
+	Percentage   pgtype.Numeric     `json:"percentage"`
+	Inclusive    bool               `json:"inclusive"`
+	Active       bool               `json:"active"`
+	CreatedAt    pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt    pgtype.Timestamptz `json:"updatedAt"`
 }

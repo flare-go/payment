@@ -213,53 +213,79 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (*Co
 
 const upsertCoupon = `-- name: UpsertCoupon :exec
 INSERT INTO coupons (
-    id, name, amount_off, percent_off, currency, duration,
-    duration_in_months, max_redemptions, times_redeemed, valid, redeem_by
+    id,
+    name,
+    currency,
+    duration,
+    amount_off,
+    percent_off,
+    duration_in_months,
+    max_redemptions,
+    times_redeemed,
+    valid,
+    redeem_by,
+    created_at,
+    updated_at
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+             $1,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             $13,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6
          )
-ON CONFLICT (id)
-    DO UPDATE SET
-                  name = EXCLUDED.name,
-                  amount_off = EXCLUDED.amount_off,
-                  percent_off = EXCLUDED.percent_off,
-                  currency = EXCLUDED.currency,
-                  duration = EXCLUDED.duration,
-                  duration_in_months = EXCLUDED.duration_in_months,
-                  max_redemptions = EXCLUDED.max_redemptions,
-                  times_redeemed = EXCLUDED.times_redeemed,
-                  valid = EXCLUDED.valid,
-                  redeem_by = EXCLUDED.redeem_by,
-                  updated_at = NOW()
+ON CONFLICT (id) DO UPDATE SET
+                               name = COALESCE($7, coupons.name),
+                               currency = COALESCE($8, coupons.currency),
+                               duration = COALESCE($9, coupons.duration),
+                               amount_off = COALESCE($10, coupons.amount_off),
+                               percent_off = COALESCE($11, coupons.percent_off),
+                               duration_in_months = COALESCE($12, coupons.duration_in_months),
+                               max_redemptions = COALESCE($13, coupons.max_redemptions),
+                               times_redeemed = $2,
+                               valid = $3,
+                               redeem_by = $4,
+                               updated_at = $6
 `
 
 type UpsertCouponParams struct {
 	ID               string             `json:"id"`
-	Name             string             `json:"name"`
-	AmountOff        int64              `json:"amountOff"`
-	PercentOff       float64            `json:"percentOff"`
-	Currency         string             `json:"currency"`
-	Duration         string             `json:"duration"`
-	DurationInMonths int32              `json:"durationInMonths"`
-	MaxRedemptions   int32              `json:"maxRedemptions"`
 	TimesRedeemed    int32              `json:"timesRedeemed"`
 	Valid            bool               `json:"valid"`
 	RedeemBy         pgtype.Timestamptz `json:"redeemBy"`
+	CreatedAt        pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt        pgtype.Timestamptz `json:"updatedAt"`
+	Name             *string            `json:"name"`
+	Currency         *string            `json:"currency"`
+	Duration         *string            `json:"duration"`
+	AmountOff        *int64             `json:"amountOff"`
+	PercentOff       float64            `json:"percentOff"`
+	DurationInMonths *int32             `json:"durationInMonths"`
+	MaxRedemptions   *int32             `json:"maxRedemptions"`
 }
 
 func (q *Queries) UpsertCoupon(ctx context.Context, arg UpsertCouponParams) error {
 	_, err := q.db.Exec(ctx, upsertCoupon,
 		arg.ID,
-		arg.Name,
-		arg.AmountOff,
-		arg.PercentOff,
-		arg.Currency,
-		arg.Duration,
-		arg.DurationInMonths,
-		arg.MaxRedemptions,
 		arg.TimesRedeemed,
 		arg.Valid,
 		arg.RedeemBy,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.Name,
+		arg.Currency,
+		arg.Duration,
+		arg.AmountOff,
+		arg.PercentOff,
+		arg.DurationInMonths,
+		arg.MaxRedemptions,
 	)
 	return err
 }

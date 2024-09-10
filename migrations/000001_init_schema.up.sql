@@ -189,6 +189,87 @@ CREATE TABLE discounts (
                            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
+-- 促銷代碼表
+CREATE TABLE promotion_codes (
+                                 id VARCHAR(255) PRIMARY KEY,
+                                 code VARCHAR(255) NOT NULL UNIQUE,
+                                 coupon_id VARCHAR(255) NOT NULL REFERENCES coupons(id),
+                                 customer_id VARCHAR(255) REFERENCES customers(id),
+                                 active BOOLEAN NOT NULL DEFAULT TRUE,
+                                 max_redemptions INTEGER,
+                                 times_redeemed INTEGER NOT NULL DEFAULT 0,
+                                 expires_at TIMESTAMP WITH TIME ZONE,
+                                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 結帳會話表
+CREATE TABLE checkout_sessions (
+                                   id VARCHAR(255) PRIMARY KEY,
+                                   customer_id VARCHAR(255) REFERENCES customers(id),
+                                   payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
+                                   status VARCHAR(50) NOT NULL,
+                                   mode VARCHAR(50) NOT NULL,
+                                   success_url TEXT NOT NULL,
+                                   cancel_url TEXT NOT NULL,
+                                   amount_total BIGINT NOT NULL,
+                                   currency VARCHAR(3) NOT NULL,
+                                   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 報價表
+CREATE TABLE quotes (
+                        id VARCHAR(255) PRIMARY KEY,
+                        customer_id VARCHAR(255) NOT NULL REFERENCES customers(id),
+                        status VARCHAR(50) NOT NULL,
+                        amount_total BIGINT NOT NULL,
+                        currency VARCHAR(3) NOT NULL,
+                        valid_until TIMESTAMP WITH TIME ZONE,
+                        accepted_at TIMESTAMP WITH TIME ZONE,
+                        canceled_at TIMESTAMP WITH TIME ZONE,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 支付連結表
+CREATE TABLE payment_links (
+                               id VARCHAR(255) PRIMARY KEY,
+                               active BOOLEAN NOT NULL DEFAULT TRUE,
+                               url TEXT NOT NULL,
+                               amount BIGINT NOT NULL,
+                               currency VARCHAR(3) NOT NULL,
+                               created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                               updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 稅率表
+CREATE TABLE tax_rates (
+                           id VARCHAR(255) PRIMARY KEY,
+                           display_name VARCHAR(255) NOT NULL,
+                           description TEXT,
+                           jurisdiction VARCHAR(255),
+                           percentage DECIMAL(5,2) NOT NULL,
+                           inclusive BOOLEAN NOT NULL DEFAULT FALSE,
+                           active BOOLEAN NOT NULL DEFAULT TRUE,
+                           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 審查表
+CREATE TABLE reviews (
+                         id VARCHAR(255) PRIMARY KEY,
+                         payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
+                         reason VARCHAR(100) NOT NULL,
+                         close VARCHAR(100) NOT NULL,
+                         status VARCHAR(50) NOT NULL,
+                         opened_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                         closed_at TIMESTAMP WITH TIME ZONE,
+                         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+
 -- 創建索引
 CREATE INDEX idx_customers_user_id ON customers(user_id);
 CREATE INDEX idx_customers_id ON customers(id);
@@ -207,3 +288,9 @@ CREATE INDEX idx_disputes_charge_id ON disputes(charge_id);
 CREATE INDEX idx_coupons_id ON coupons(id);
 CREATE INDEX idx_discounts_customer_id ON discounts(customer_id);
 CREATE INDEX idx_discounts_coupon_id ON discounts(coupon_id);
+CREATE INDEX idx_promotion_codes_coupon_id ON promotion_codes(coupon_id);
+CREATE INDEX idx_promotion_codes_customer_id ON promotion_codes(customer_id);
+CREATE INDEX idx_checkout_sessions_customer_id ON checkout_sessions(customer_id);
+CREATE INDEX idx_checkout_sessions_payment_intent_id ON checkout_sessions(payment_intent_id);
+CREATE INDEX idx_quotes_customer_id ON quotes(customer_id);
+CREATE INDEX idx_reviews_payment_intent_id ON reviews(payment_intent_id);
