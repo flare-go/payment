@@ -22,11 +22,11 @@ INSERT INTO refunds (
 `
 
 type CreateRefundParams struct {
-	ID       string       `json:"id"`
-	ChargeID string       `json:"chargeId"`
-	Amount   float64      `json:"amount"`
-	Status   RefundStatus `json:"status"`
-	Reason   *string      `json:"reason"`
+	ID       string           `json:"id"`
+	ChargeID string           `json:"chargeId"`
+	Amount   float64          `json:"amount"`
+	Status   RefundStatus     `json:"status"`
+	Reason   NullRefundReason `json:"reason"`
 }
 
 func (q *Queries) CreateRefund(ctx context.Context, arg CreateRefundParams) error {
@@ -179,9 +179,9 @@ WHERE id = $1
 `
 
 type UpdateRefundParams struct {
-	ID     string       `json:"id"`
-	Status RefundStatus `json:"status"`
-	Reason *string      `json:"reason"`
+	ID     string           `json:"id"`
+	Status RefundStatus     `json:"status"`
+	Reason NullRefundReason `json:"reason"`
 }
 
 func (q *Queries) UpdateRefund(ctx context.Context, arg UpdateRefundParams) error {
@@ -204,11 +204,11 @@ ON CONFLICT (id) DO UPDATE SET
 `
 
 type UpsertRefundParams struct {
-	ID       string       `json:"id"`
-	ChargeID string       `json:"chargeId"`
-	Amount   float64      `json:"amount"`
-	Status   RefundStatus `json:"status"`
-	Reason   *string      `json:"reason"`
+	ID       string           `json:"id"`
+	ChargeID string           `json:"chargeId"`
+	Amount   float64          `json:"amount"`
+	Status   RefundStatus     `json:"status"`
+	Reason   NullRefundReason `json:"reason"`
 }
 
 func (q *Queries) UpsertRefund(ctx context.Context, arg UpsertRefundParams) error {

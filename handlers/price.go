@@ -3,10 +3,10 @@ package handlers
 import (
 	"errors"
 	"github.com/labstack/echo/v4"
+	"github.com/stripe/stripe-go/v79"
 	"go.uber.org/zap"
 	"goflare.io/payment"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 	"net/http"
 )
 
@@ -65,7 +65,7 @@ func validateCreatePriceRequest(req models.Price) error {
 	if req.UnitAmount <= 0 {
 		return errors.New("unit_amount must be greater than 0")
 	}
-	if req.Type == enum.PriceTypeRecurring {
+	if req.Type == stripe.PriceTypeRecurring {
 		if req.RecurringInterval == "" {
 			return errors.New("recurring_interval is required for recurring prices")
 		}

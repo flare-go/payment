@@ -4,37 +4,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
-	"goflare.io/payment/charge"
-	"goflare.io/payment/checkout_session"
-	"goflare.io/payment/coupon"
-	"goflare.io/payment/discount"
-	"goflare.io/payment/disputes"
-	"goflare.io/payment/event"
-	"goflare.io/payment/payment_link"
-	"goflare.io/payment/promotion_code"
-	"goflare.io/payment/quote"
-	"goflare.io/payment/review"
-	"goflare.io/payment/tax_rate"
 	"golang.org/x/sync/errgroup"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/client"
 	"github.com/stripe/stripe-go/v79/webhook"
 
+	"goflare.io/payment/charge"
+	"goflare.io/payment/checkout_session"
 	"goflare.io/payment/config"
+	"goflare.io/payment/coupon"
 	"goflare.io/payment/customer"
+	"goflare.io/payment/discount"
+	"goflare.io/payment/disputes"
+	"goflare.io/payment/event"
 	"goflare.io/payment/invoice"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 	"goflare.io/payment/payment_intent"
+	"goflare.io/payment/payment_link"
 	"goflare.io/payment/payment_method"
 	"goflare.io/payment/price"
 	"goflare.io/payment/product"
+	"goflare.io/payment/promotion_code"
+	"goflare.io/payment/quote"
 	"goflare.io/payment/refund"
+	"goflare.io/payment/review"
 	"goflare.io/payment/subscription"
+	"goflare.io/payment/tax_rate"
 )
 
 type StripePayment struct {
@@ -451,7 +451,7 @@ func (sp *StripePayment) CreatePrice(price models.Price) error {
 		UnitAmount: stripe.Int64(int64(price.UnitAmount * 100)),
 	}
 
-	if price.Type == enum.PriceTypeRecurring {
+	if price.Type == stripe.PriceTypeRecurring {
 		params.Recurring = &stripe.PriceRecurringParams{
 			Interval:        stripe.String(string(price.RecurringInterval)),
 			IntervalCount:   stripe.Int64(int64(price.RecurringIntervalCount)),
@@ -596,7 +596,7 @@ func (sp *StripePayment) ListPaymentMethods(ctx context.Context, customerID stri
 }
 
 // CreatePaymentIntent creates a new payment intent in Stripe and in the local database
-func (sp *StripePayment) CreatePaymentIntent(customerID, paymentMethodID string, amount uint64, currency enum.Currency) error {
+func (sp *StripePayment) CreatePaymentIntent(customerID, paymentMethodID string, amount uint64, currency stripe.Currency) error {
 
 	params := &stripe.PaymentIntentParams{
 		Amount:        stripe.Int64(int64(amount)),
@@ -752,8 +752,7 @@ func (sp *StripePayment) handleSubscriptionEvent(ctx context.Context, subscripti
 		partialSubscription.CustomerID = &subscription.Customer.ID
 	}
 	if subscription.Status != "" {
-		status := enum.SubscriptionStatus(subscription.Status)
-		partialSubscription.Status = &status
+		partialSubscription.Status = &subscription.Status
 	}
 	if subscription.CurrentPeriodStart > 0 {
 		start := time.Unix(subscription.CurrentPeriodStart, 0)
@@ -794,12 +793,10 @@ func (sp *StripePayment) handleInvoiceEvent(ctx context.Context, invoice *stripe
 		partialInvoice.SubscriptionID = &invoice.Subscription.ID
 	}
 	if invoice.Status != "" {
-		status := enum.InvoiceStatus(invoice.Status)
-		partialInvoice.Status = &status
+		partialInvoice.Status = &invoice.Status
 	}
 	if invoice.Currency != "" {
-		currency := enum.Currency(invoice.Currency)
-		partialInvoice.Currency = &currency
+		partialInvoice.Currency = &invoice.Currency
 	}
 	if invoice.AmountDue > 0 {
 		amountDue := float64(invoice.AmountDue) / 100
@@ -851,26 +848,22 @@ func (sp *StripePayment) handlePaymentIntentEvent(ctx context.Context, paymentIn
 		partialPaymentIntent.Amount = &amount
 	}
 	if paymentIntent.Currency != "" {
-		currency := enum.Currency(paymentIntent.Currency)
-		partialPaymentIntent.Currency = &currency
+		partialPaymentIntent.Currency = &paymentIntent.Currency
 	}
 	if paymentIntent.Status != "" {
-		status := enum.PaymentIntentStatus(paymentIntent.Status)
-		partialPaymentIntent.Status = &status
+		partialPaymentIntent.Status = &paymentIntent.Status
 	}
 	if paymentIntent.PaymentMethod != nil {
 		partialPaymentIntent.PaymentMethodID = &paymentIntent.PaymentMethod.ID
 	}
 	if paymentIntent.SetupFutureUsage != "" {
-		setupFutureUsage := string(paymentIntent.SetupFutureUsage)
-		partialPaymentIntent.SetupFutureUsage = &setupFutureUsage
+		partialPaymentIntent.SetupFutureUsage = &paymentIntent.SetupFutureUsage
 	}
 	if paymentIntent.ClientSecret != "" {
 		partialPaymentIntent.ClientSecret = &paymentIntent.ClientSecret
 	}
 	if paymentIntent.CaptureMethod != "" {
-		captureMethod := string(paymentIntent.CaptureMethod)
-		partialPaymentIntent.CaptureMethod = &captureMethod
+		partialPaymentIntent.CaptureMethod = &paymentIntent.CaptureMethod
 	}
 	if paymentIntent.Created > 0 {
 		createdAt := time.Unix(paymentIntent.Created, 0)
@@ -896,12 +889,10 @@ func (sp *StripePayment) handleChargeEvent(ctx context.Context, charge *stripe.C
 		partialCharge.Amount = &amount
 	}
 	if charge.Currency != "" {
-		chargeCurrency := string(charge.Currency)
-		partialCharge.Currency = &chargeCurrency
+		partialCharge.Currency = &charge.Currency
 	}
 	if charge.Status != "" {
-		chargeStatus := string(charge.Status)
-		partialCharge.Status = &chargeStatus
+		partialCharge.Status = &charge.Status
 	}
 	partialCharge.Paid = &charge.Paid
 	partialCharge.Refunded = &charge.Refunded
@@ -932,12 +923,10 @@ func (sp *StripePayment) handleRefundEvent(ctx context.Context, refund *stripe.R
 		partialRefund.Amount = &amount
 	}
 	if refund.Status != "" {
-		status := enum.RefundStatus(refund.Status)
-		partialRefund.Status = &status
+		partialRefund.Status = &refund.Status
 	}
 	if refund.Reason != "" {
-		reason := string(refund.Reason)
-		partialRefund.Reason = &reason
+		partialRefund.Reason = &refund.Reason
 	}
 	if refund.Created > 0 {
 		createdAt := time.Unix(refund.Created, 0)
@@ -963,12 +952,10 @@ func (sp *StripePayment) handleDisputeEvent(ctx context.Context, dispute *stripe
 		partialDispute.Amount = &dispute.Amount
 	}
 	if dispute.Status != "" {
-		disputeStatus := string(dispute.Status)
-		partialDispute.Status = &disputeStatus
+		partialDispute.Status = &dispute.Status
 	}
 	if dispute.Reason != "" {
-		disputeReason := string(dispute.Reason)
-		partialDispute.Reason = &disputeReason
+		partialDispute.Reason = &dispute.Reason
 	}
 	if dispute.Created > 0 {
 		createdAt := time.Unix(dispute.Created, 0)
@@ -1021,21 +1008,18 @@ func (sp *StripePayment) handlePriceEvent(ctx context.Context, price *stripe.Pri
 	}
 	partialPrice.Active = &price.Active
 	if price.Currency != "" {
-		currency := enum.Currency(price.Currency)
-		partialPrice.Currency = &currency
+		partialPrice.Currency = &price.Currency
 	}
 	if price.UnitAmount > 0 {
 		unitAmount := float64(price.UnitAmount) / 100
 		partialPrice.UnitAmount = &unitAmount
 	}
 	if price.Type != "" {
-		priceType := enum.PriceType(price.Type)
-		partialPrice.Type = &priceType
+		partialPrice.Type = &price.Type
 	}
 	if price.Recurring != nil {
 		if price.Recurring.Interval != "" {
-			interval := enum.Interval(price.Recurring.Interval)
-			partialPrice.RecurringInterval = &interval
+			partialPrice.RecurringInterval = &price.Recurring.Interval
 		}
 		if price.Recurring.IntervalCount > 0 {
 			intervalCount := int32(price.Recurring.IntervalCount)
@@ -1062,7 +1046,7 @@ func (sp *StripePayment) handlePaymentMethodEvent(ctx context.Context, paymentMe
 		partialPaymentMethod.CustomerID = &paymentMethod.Customer.ID
 	}
 	if paymentMethod.Type != "" {
-		pmType := enum.PaymentMethodType(paymentMethod.Type)
+		pmType := paymentMethod.Type
 		partialPaymentMethod.Type = &pmType
 	}
 	if paymentMethod.Created > 0 {
@@ -1077,8 +1061,7 @@ func (sp *StripePayment) handlePaymentMethodEvent(ctx context.Context, paymentMe
 				partialPaymentMethod.CardLast4 = &paymentMethod.Card.Last4
 			}
 			if paymentMethod.Card.Brand != "" {
-				cardBrand := string(paymentMethod.Card.Brand)
-				partialPaymentMethod.CardBrand = &cardBrand
+				partialPaymentMethod.CardBrand = &paymentMethod.Card.Brand
 			}
 			if paymentMethod.Card.ExpMonth > 0 {
 				expMonth := int32(paymentMethod.Card.ExpMonth)
@@ -1119,12 +1102,10 @@ func (sp *StripePayment) handleCouponEvent(ctx context.Context, coupon *stripe.C
 		partialCoupon.Name = &coupon.Name
 	}
 	if coupon.Currency != "" {
-		currency := string(coupon.Currency)
-		partialCoupon.Currency = &currency
+		partialCoupon.Currency = &coupon.Currency
 	}
 	if coupon.Duration != "" {
-		duration := string(coupon.Duration)
-		partialCoupon.Duration = &duration
+		partialCoupon.Duration = &coupon.Duration
 	}
 	timesRedeemed := int32(coupon.TimesRedeemed)
 	partialCoupon.TimesRedeemed = &timesRedeemed
@@ -1243,16 +1224,13 @@ func (sp *StripePayment) handleCheckoutSessionEvent(ctx context.Context, session
 	if session.PaymentIntent != nil {
 		partialSession.PaymentIntentID = &session.PaymentIntent.ID
 	}
-	status := string(session.Status)
-	partialSession.Status = &status
-	mode := string(session.Mode)
-	partialSession.Mode = &mode
+	partialSession.Status = &session.Status
+	partialSession.Mode = &session.Mode
 	partialSession.SuccessURL = &session.SuccessURL
 	partialSession.CancelURL = &session.CancelURL
 	amountTotal := session.AmountTotal
 	partialSession.AmountTotal = &amountTotal
-	currency := string(session.Currency)
-	partialSession.Currency = &currency
+	partialSession.Currency = &session.Currency
 	if session.Created > 0 {
 		createdAt := time.Unix(session.Created, 0)
 		partialSession.CreatedAt = &createdAt
@@ -1275,14 +1253,12 @@ func (sp *StripePayment) handleQuoteEvent(ctx context.Context, quote *stripe.Quo
 	if quote.Customer != nil {
 		partialQuote.CustomerID = &quote.Customer.ID
 	}
-	status := string(quote.Status)
-	partialQuote.Status = &status
+	partialQuote.Status = &quote.Status
 
 	amountTotal := quote.AmountTotal
 	partialQuote.AmountTotal = &amountTotal
 
-	currency := string(quote.Currency)
-	partialQuote.Currency = &currency
+	partialQuote.Currency = &quote.Currency
 
 	if quote.ExpiresAt > 0 {
 		validUntil := time.Unix(quote.ExpiresAt, 0)
@@ -1331,8 +1307,7 @@ func (sp *StripePayment) handlePaymentLinkEvent(ctx context.Context, paymentLink
 		partialPaymentLink.Amount = &totalAmount
 	}
 
-	currency := string(paymentLink.Currency)
-	partialPaymentLink.Currency = &currency
+	partialPaymentLink.Currency = &paymentLink.Currency
 
 	switch eventType {
 	case "payment_link.created", "payment_link.updated":
@@ -1379,8 +1354,7 @@ func (sp *StripePayment) handleReviewEvent(ctx context.Context, review *stripe.R
 	if review.PaymentIntent != nil {
 		partialReview.PaymentIntentID = &review.PaymentIntent.ID
 	}
-	reason := string(review.Reason)
-	partialReview.Reason = &reason
+	partialReview.Reason = &review.Reason
 
 	// 根據 Open 字段設置狀態
 	var status string
@@ -1406,8 +1380,7 @@ func (sp *StripePayment) handleReviewEvent(ctx context.Context, review *stripe.R
 
 	// ClosedReason
 	if review.ClosedReason != "" {
-		closedReason := string(review.ClosedReason)
-		partialReview.ClosedReason = &closedReason
+		partialReview.ClosedReason = &review.ClosedReason
 	}
 
 	switch eventType {

@@ -11,13 +11,360 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ChargeStatus string
+
+const (
+	ChargeStatusFailed    ChargeStatus = "failed"
+	ChargeStatusPending   ChargeStatus = "pending"
+	ChargeStatusSucceeded ChargeStatus = "succeeded"
+)
+
+func (e *ChargeStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ChargeStatus(s)
+	case string:
+		*e = ChargeStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ChargeStatus: %T", src)
+	}
+	return nil
+}
+
+type NullChargeStatus struct {
+	ChargeStatus ChargeStatus `json:"chargeStatus"`
+	Valid        bool         `json:"valid"` // Valid is true if ChargeStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullChargeStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ChargeStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ChargeStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullChargeStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ChargeStatus), nil
+}
+
+func (e ChargeStatus) Valid() bool {
+	switch e {
+	case ChargeStatusFailed,
+		ChargeStatusPending,
+		ChargeStatusSucceeded:
+		return true
+	}
+	return false
+}
+
+type CheckoutSessionMode string
+
+const (
+	CheckoutSessionModePayment      CheckoutSessionMode = "payment"
+	CheckoutSessionModeSetup        CheckoutSessionMode = "setup"
+	CheckoutSessionModeSubscription CheckoutSessionMode = "subscription"
+)
+
+func (e *CheckoutSessionMode) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CheckoutSessionMode(s)
+	case string:
+		*e = CheckoutSessionMode(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CheckoutSessionMode: %T", src)
+	}
+	return nil
+}
+
+type NullCheckoutSessionMode struct {
+	CheckoutSessionMode CheckoutSessionMode `json:"checkoutSessionMode"`
+	Valid               bool                `json:"valid"` // Valid is true if CheckoutSessionMode is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCheckoutSessionMode) Scan(value interface{}) error {
+	if value == nil {
+		ns.CheckoutSessionMode, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CheckoutSessionMode.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCheckoutSessionMode) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CheckoutSessionMode), nil
+}
+
+func (e CheckoutSessionMode) Valid() bool {
+	switch e {
+	case CheckoutSessionModePayment,
+		CheckoutSessionModeSetup,
+		CheckoutSessionModeSubscription:
+		return true
+	}
+	return false
+}
+
+type CheckoutSessionStatus string
+
+const (
+	CheckoutSessionStatusComplete CheckoutSessionStatus = "complete"
+	CheckoutSessionStatusExpired  CheckoutSessionStatus = "expired"
+	CheckoutSessionStatusOpen     CheckoutSessionStatus = "open"
+)
+
+func (e *CheckoutSessionStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CheckoutSessionStatus(s)
+	case string:
+		*e = CheckoutSessionStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CheckoutSessionStatus: %T", src)
+	}
+	return nil
+}
+
+type NullCheckoutSessionStatus struct {
+	CheckoutSessionStatus CheckoutSessionStatus `json:"checkoutSessionStatus"`
+	Valid                 bool                  `json:"valid"` // Valid is true if CheckoutSessionStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCheckoutSessionStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.CheckoutSessionStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CheckoutSessionStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCheckoutSessionStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CheckoutSessionStatus), nil
+}
+
+func (e CheckoutSessionStatus) Valid() bool {
+	switch e {
+	case CheckoutSessionStatusComplete,
+		CheckoutSessionStatusExpired,
+		CheckoutSessionStatusOpen:
+		return true
+	}
+	return false
+}
+
+type CouponDuration string
+
+const (
+	CouponDurationForever   CouponDuration = "forever"
+	CouponDurationOnce      CouponDuration = "once"
+	CouponDurationRepeating CouponDuration = "repeating"
+)
+
+func (e *CouponDuration) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CouponDuration(s)
+	case string:
+		*e = CouponDuration(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CouponDuration: %T", src)
+	}
+	return nil
+}
+
+type NullCouponDuration struct {
+	CouponDuration CouponDuration `json:"couponDuration"`
+	Valid          bool           `json:"valid"` // Valid is true if CouponDuration is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCouponDuration) Scan(value interface{}) error {
+	if value == nil {
+		ns.CouponDuration, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CouponDuration.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCouponDuration) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CouponDuration), nil
+}
+
+func (e CouponDuration) Valid() bool {
+	switch e {
+	case CouponDurationForever,
+		CouponDurationOnce,
+		CouponDurationRepeating:
+		return true
+	}
+	return false
+}
+
 type Currency string
 
 const (
-	CurrencyUSD Currency = "USD"
-	CurrencyEUR Currency = "EUR"
-	CurrencyJPY Currency = "JPY"
-	CurrencyTWD Currency = "TWD"
+	CurrencyAed Currency = "aed"
+	CurrencyAfn Currency = "afn"
+	CurrencyAll Currency = "all"
+	CurrencyAmd Currency = "amd"
+	CurrencyAng Currency = "ang"
+	CurrencyAoa Currency = "aoa"
+	CurrencyArs Currency = "ars"
+	CurrencyAud Currency = "aud"
+	CurrencyAwg Currency = "awg"
+	CurrencyAzn Currency = "azn"
+	CurrencyBam Currency = "bam"
+	CurrencyBbd Currency = "bbd"
+	CurrencyBdt Currency = "bdt"
+	CurrencyBgn Currency = "bgn"
+	CurrencyBif Currency = "bif"
+	CurrencyBmd Currency = "bmd"
+	CurrencyBnd Currency = "bnd"
+	CurrencyBob Currency = "bob"
+	CurrencyBrl Currency = "brl"
+	CurrencyBsd Currency = "bsd"
+	CurrencyBwp Currency = "bwp"
+	CurrencyBzd Currency = "bzd"
+	CurrencyCad Currency = "cad"
+	CurrencyCdf Currency = "cdf"
+	CurrencyChf Currency = "chf"
+	CurrencyClp Currency = "clp"
+	CurrencyCny Currency = "cny"
+	CurrencyCop Currency = "cop"
+	CurrencyCrc Currency = "crc"
+	CurrencyCve Currency = "cve"
+	CurrencyCzk Currency = "czk"
+	CurrencyDjf Currency = "djf"
+	CurrencyDkk Currency = "dkk"
+	CurrencyDop Currency = "dop"
+	CurrencyDzd Currency = "dzd"
+	CurrencyEek Currency = "eek"
+	CurrencyEgp Currency = "egp"
+	CurrencyEtb Currency = "etb"
+	CurrencyEur Currency = "eur"
+	CurrencyFjd Currency = "fjd"
+	CurrencyFkp Currency = "fkp"
+	CurrencyGbp Currency = "gbp"
+	CurrencyGel Currency = "gel"
+	CurrencyGip Currency = "gip"
+	CurrencyGmd Currency = "gmd"
+	CurrencyGnf Currency = "gnf"
+	CurrencyGtq Currency = "gtq"
+	CurrencyGyd Currency = "gyd"
+	CurrencyHkd Currency = "hkd"
+	CurrencyHnl Currency = "hnl"
+	CurrencyHrk Currency = "hrk"
+	CurrencyHtg Currency = "htg"
+	CurrencyHuf Currency = "huf"
+	CurrencyIdr Currency = "idr"
+	CurrencyIls Currency = "ils"
+	CurrencyInr Currency = "inr"
+	CurrencyIsk Currency = "isk"
+	CurrencyJmd Currency = "jmd"
+	CurrencyJpy Currency = "jpy"
+	CurrencyKes Currency = "kes"
+	CurrencyKgs Currency = "kgs"
+	CurrencyKhr Currency = "khr"
+	CurrencyKmf Currency = "kmf"
+	CurrencyKrw Currency = "krw"
+	CurrencyKyd Currency = "kyd"
+	CurrencyKzt Currency = "kzt"
+	CurrencyLak Currency = "lak"
+	CurrencyLbp Currency = "lbp"
+	CurrencyLkr Currency = "lkr"
+	CurrencyLrd Currency = "lrd"
+	CurrencyLsl Currency = "lsl"
+	CurrencyLtl Currency = "ltl"
+	CurrencyLvl Currency = "lvl"
+	CurrencyMad Currency = "mad"
+	CurrencyMdl Currency = "mdl"
+	CurrencyMga Currency = "mga"
+	CurrencyMkd Currency = "mkd"
+	CurrencyMnt Currency = "mnt"
+	CurrencyMop Currency = "mop"
+	CurrencyMro Currency = "mro"
+	CurrencyMur Currency = "mur"
+	CurrencyMvr Currency = "mvr"
+	CurrencyMwk Currency = "mwk"
+	CurrencyMxn Currency = "mxn"
+	CurrencyMyr Currency = "myr"
+	CurrencyMzn Currency = "mzn"
+	CurrencyNad Currency = "nad"
+	CurrencyNgn Currency = "ngn"
+	CurrencyNio Currency = "nio"
+	CurrencyNok Currency = "nok"
+	CurrencyNpr Currency = "npr"
+	CurrencyNzd Currency = "nzd"
+	CurrencyPab Currency = "pab"
+	CurrencyPen Currency = "pen"
+	CurrencyPgk Currency = "pgk"
+	CurrencyPhp Currency = "php"
+	CurrencyPkr Currency = "pkr"
+	CurrencyPln Currency = "pln"
+	CurrencyPyg Currency = "pyg"
+	CurrencyQar Currency = "qar"
+	CurrencyRon Currency = "ron"
+	CurrencyRsd Currency = "rsd"
+	CurrencyRub Currency = "rub"
+	CurrencyRwf Currency = "rwf"
+	CurrencySar Currency = "sar"
+	CurrencySbd Currency = "sbd"
+	CurrencyScr Currency = "scr"
+	CurrencySek Currency = "sek"
+	CurrencySgd Currency = "sgd"
+	CurrencyShp Currency = "shp"
+	CurrencySll Currency = "sll"
+	CurrencySos Currency = "sos"
+	CurrencySrd Currency = "srd"
+	CurrencyStd Currency = "std"
+	CurrencySvc Currency = "svc"
+	CurrencySzl Currency = "szl"
+	CurrencyThb Currency = "thb"
+	CurrencyTjs Currency = "tjs"
+	CurrencyTop Currency = "top"
+	CurrencyTry Currency = "try"
+	CurrencyTtd Currency = "ttd"
+	CurrencyTwd Currency = "twd"
+	CurrencyTzs Currency = "tzs"
+	CurrencyUah Currency = "uah"
+	CurrencyUgx Currency = "ugx"
+	CurrencyUsd Currency = "usd"
+	CurrencyUyu Currency = "uyu"
+	CurrencyUzs Currency = "uzs"
+	CurrencyVef Currency = "vef"
+	CurrencyVnd Currency = "vnd"
+	CurrencyVuv Currency = "vuv"
+	CurrencyWst Currency = "wst"
+	CurrencyXaf Currency = "xaf"
+	CurrencyXcd Currency = "xcd"
+	CurrencyXof Currency = "xof"
+	CurrencyXpf Currency = "xpf"
+	CurrencyYer Currency = "yer"
+	CurrencyZar Currency = "zar"
+	CurrencyZmw Currency = "zmw"
 )
 
 func (e *Currency) Scan(src interface{}) error {
@@ -57,65 +404,802 @@ func (ns NullCurrency) Value() (driver.Value, error) {
 
 func (e Currency) Valid() bool {
 	switch e {
-	case CurrencyUSD,
-		CurrencyEUR,
-		CurrencyJPY,
-		CurrencyTWD:
+	case CurrencyAed,
+		CurrencyAfn,
+		CurrencyAll,
+		CurrencyAmd,
+		CurrencyAng,
+		CurrencyAoa,
+		CurrencyArs,
+		CurrencyAud,
+		CurrencyAwg,
+		CurrencyAzn,
+		CurrencyBam,
+		CurrencyBbd,
+		CurrencyBdt,
+		CurrencyBgn,
+		CurrencyBif,
+		CurrencyBmd,
+		CurrencyBnd,
+		CurrencyBob,
+		CurrencyBrl,
+		CurrencyBsd,
+		CurrencyBwp,
+		CurrencyBzd,
+		CurrencyCad,
+		CurrencyCdf,
+		CurrencyChf,
+		CurrencyClp,
+		CurrencyCny,
+		CurrencyCop,
+		CurrencyCrc,
+		CurrencyCve,
+		CurrencyCzk,
+		CurrencyDjf,
+		CurrencyDkk,
+		CurrencyDop,
+		CurrencyDzd,
+		CurrencyEek,
+		CurrencyEgp,
+		CurrencyEtb,
+		CurrencyEur,
+		CurrencyFjd,
+		CurrencyFkp,
+		CurrencyGbp,
+		CurrencyGel,
+		CurrencyGip,
+		CurrencyGmd,
+		CurrencyGnf,
+		CurrencyGtq,
+		CurrencyGyd,
+		CurrencyHkd,
+		CurrencyHnl,
+		CurrencyHrk,
+		CurrencyHtg,
+		CurrencyHuf,
+		CurrencyIdr,
+		CurrencyIls,
+		CurrencyInr,
+		CurrencyIsk,
+		CurrencyJmd,
+		CurrencyJpy,
+		CurrencyKes,
+		CurrencyKgs,
+		CurrencyKhr,
+		CurrencyKmf,
+		CurrencyKrw,
+		CurrencyKyd,
+		CurrencyKzt,
+		CurrencyLak,
+		CurrencyLbp,
+		CurrencyLkr,
+		CurrencyLrd,
+		CurrencyLsl,
+		CurrencyLtl,
+		CurrencyLvl,
+		CurrencyMad,
+		CurrencyMdl,
+		CurrencyMga,
+		CurrencyMkd,
+		CurrencyMnt,
+		CurrencyMop,
+		CurrencyMro,
+		CurrencyMur,
+		CurrencyMvr,
+		CurrencyMwk,
+		CurrencyMxn,
+		CurrencyMyr,
+		CurrencyMzn,
+		CurrencyNad,
+		CurrencyNgn,
+		CurrencyNio,
+		CurrencyNok,
+		CurrencyNpr,
+		CurrencyNzd,
+		CurrencyPab,
+		CurrencyPen,
+		CurrencyPgk,
+		CurrencyPhp,
+		CurrencyPkr,
+		CurrencyPln,
+		CurrencyPyg,
+		CurrencyQar,
+		CurrencyRon,
+		CurrencyRsd,
+		CurrencyRub,
+		CurrencyRwf,
+		CurrencySar,
+		CurrencySbd,
+		CurrencyScr,
+		CurrencySek,
+		CurrencySgd,
+		CurrencyShp,
+		CurrencySll,
+		CurrencySos,
+		CurrencySrd,
+		CurrencyStd,
+		CurrencySvc,
+		CurrencySzl,
+		CurrencyThb,
+		CurrencyTjs,
+		CurrencyTop,
+		CurrencyTry,
+		CurrencyTtd,
+		CurrencyTwd,
+		CurrencyTzs,
+		CurrencyUah,
+		CurrencyUgx,
+		CurrencyUsd,
+		CurrencyUyu,
+		CurrencyUzs,
+		CurrencyVef,
+		CurrencyVnd,
+		CurrencyVuv,
+		CurrencyWst,
+		CurrencyXaf,
+		CurrencyXcd,
+		CurrencyXof,
+		CurrencyXpf,
+		CurrencyYer,
+		CurrencyZar,
+		CurrencyZmw:
 		return true
 	}
 	return false
 }
 
-type IntervalType string
+type DisputeReason string
 
 const (
-	IntervalTypeDay   IntervalType = "day"
-	IntervalTypeWeek  IntervalType = "week"
-	IntervalTypeMonth IntervalType = "month"
-	IntervalTypeYear  IntervalType = "year"
+	DisputeReasonBankCannotProcess       DisputeReason = "bank_cannot_process"
+	DisputeReasonCheckReturned           DisputeReason = "check_returned"
+	DisputeReasonCreditNotProcessed      DisputeReason = "credit_not_processed"
+	DisputeReasonCustomerInitiated       DisputeReason = "customer_initiated"
+	DisputeReasonDebitNotAuthorized      DisputeReason = "debit_not_authorized"
+	DisputeReasonDuplicate               DisputeReason = "duplicate"
+	DisputeReasonFraudulent              DisputeReason = "fraudulent"
+	DisputeReasonGeneral                 DisputeReason = "general"
+	DisputeReasonIncorrectAccountDetails DisputeReason = "incorrect_account_details"
+	DisputeReasonInsufficientFunds       DisputeReason = "insufficient_funds"
+	DisputeReasonProductNotReceived      DisputeReason = "product_not_received"
+	DisputeReasonProductUnacceptable     DisputeReason = "product_unacceptable"
+	DisputeReasonSubscriptionCanceled    DisputeReason = "subscription_canceled"
+	DisputeReasonUnrecognized            DisputeReason = "unrecognized"
 )
 
-func (e *IntervalType) Scan(src interface{}) error {
+func (e *DisputeReason) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = IntervalType(s)
+		*e = DisputeReason(s)
 	case string:
-		*e = IntervalType(s)
+		*e = DisputeReason(s)
 	default:
-		return fmt.Errorf("unsupported scan type for IntervalType: %T", src)
+		return fmt.Errorf("unsupported scan type for DisputeReason: %T", src)
 	}
 	return nil
 }
 
-type NullIntervalType struct {
-	IntervalType IntervalType `json:"intervalType"`
-	Valid        bool         `json:"valid"` // Valid is true if IntervalType is not NULL
+type NullDisputeReason struct {
+	DisputeReason DisputeReason `json:"disputeReason"`
+	Valid         bool          `json:"valid"` // Valid is true if DisputeReason is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullIntervalType) Scan(value interface{}) error {
+func (ns *NullDisputeReason) Scan(value interface{}) error {
 	if value == nil {
-		ns.IntervalType, ns.Valid = "", false
+		ns.DisputeReason, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.IntervalType.Scan(value)
+	return ns.DisputeReason.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullIntervalType) Value() (driver.Value, error) {
+func (ns NullDisputeReason) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.IntervalType), nil
+	return string(ns.DisputeReason), nil
 }
 
-func (e IntervalType) Valid() bool {
+func (e DisputeReason) Valid() bool {
 	switch e {
-	case IntervalTypeDay,
-		IntervalTypeWeek,
-		IntervalTypeMonth,
-		IntervalTypeYear:
+	case DisputeReasonBankCannotProcess,
+		DisputeReasonCheckReturned,
+		DisputeReasonCreditNotProcessed,
+		DisputeReasonCustomerInitiated,
+		DisputeReasonDebitNotAuthorized,
+		DisputeReasonDuplicate,
+		DisputeReasonFraudulent,
+		DisputeReasonGeneral,
+		DisputeReasonIncorrectAccountDetails,
+		DisputeReasonInsufficientFunds,
+		DisputeReasonProductNotReceived,
+		DisputeReasonProductUnacceptable,
+		DisputeReasonSubscriptionCanceled,
+		DisputeReasonUnrecognized:
+		return true
+	}
+	return false
+}
+
+type DisputeStatus string
+
+const (
+	DisputeStatusLost                 DisputeStatus = "lost"
+	DisputeStatusNeedsResponse        DisputeStatus = "needs_response"
+	DisputeStatusUnderReview          DisputeStatus = "under_review"
+	DisputeStatusWarningClosed        DisputeStatus = "warning_closed"
+	DisputeStatusWarningNeedsResponse DisputeStatus = "warning_needs_response"
+	DisputeStatusWarningUnderReview   DisputeStatus = "warning_under_review"
+	DisputeStatusWon                  DisputeStatus = "won"
+)
+
+func (e *DisputeStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DisputeStatus(s)
+	case string:
+		*e = DisputeStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DisputeStatus: %T", src)
+	}
+	return nil
+}
+
+type NullDisputeStatus struct {
+	DisputeStatus DisputeStatus `json:"disputeStatus"`
+	Valid         bool          `json:"valid"` // Valid is true if DisputeStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDisputeStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.DisputeStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DisputeStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDisputeStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DisputeStatus), nil
+}
+
+func (e DisputeStatus) Valid() bool {
+	switch e {
+	case DisputeStatusLost,
+		DisputeStatusNeedsResponse,
+		DisputeStatusUnderReview,
+		DisputeStatusWarningClosed,
+		DisputeStatusWarningNeedsResponse,
+		DisputeStatusWarningUnderReview,
+		DisputeStatusWon:
+		return true
+	}
+	return false
+}
+
+type EventType string
+
+const (
+	EventTypeAccountapplicationauthorized                       EventType = "account.application.authorized"
+	EventTypeAccountapplicationdeauthorized                     EventType = "account.application.deauthorized"
+	EventTypeAccountexternalAccountcreated                      EventType = "account.external_account.created"
+	EventTypeAccountexternalAccountdeleted                      EventType = "account.external_account.deleted"
+	EventTypeAccountexternalAccountupdated                      EventType = "account.external_account.updated"
+	EventTypeAccountupdated                                     EventType = "account.updated"
+	EventTypeApplicationFeecreated                              EventType = "application_fee.created"
+	EventTypeApplicationFeerefundupdated                        EventType = "application_fee.refund.updated"
+	EventTypeApplicationFeerefunded                             EventType = "application_fee.refunded"
+	EventTypeBalanceavailable                                   EventType = "balance.available"
+	EventTypeBillingalerttriggered                              EventType = "billing.alert.triggered"
+	EventTypeBillingPortalconfigurationcreated                  EventType = "billing_portal.configuration.created"
+	EventTypeBillingPortalconfigurationupdated                  EventType = "billing_portal.configuration.updated"
+	EventTypeBillingPortalsessioncreated                        EventType = "billing_portal.session.created"
+	EventTypeCapabilityupdated                                  EventType = "capability.updated"
+	EventTypeCashBalancefundsAvailable                          EventType = "cash_balance.funds_available"
+	EventTypeChargecaptured                                     EventType = "charge.captured"
+	EventTypeChargedisputeclosed                                EventType = "charge.dispute.closed"
+	EventTypeChargedisputecreated                               EventType = "charge.dispute.created"
+	EventTypeChargedisputefundsReinstated                       EventType = "charge.dispute.funds_reinstated"
+	EventTypeChargedisputefundsWithdrawn                        EventType = "charge.dispute.funds_withdrawn"
+	EventTypeChargedisputeupdated                               EventType = "charge.dispute.updated"
+	EventTypeChargeexpired                                      EventType = "charge.expired"
+	EventTypeChargefailed                                       EventType = "charge.failed"
+	EventTypeChargepending                                      EventType = "charge.pending"
+	EventTypeChargerefundupdated                                EventType = "charge.refund.updated"
+	EventTypeChargerefunded                                     EventType = "charge.refunded"
+	EventTypeChargesucceeded                                    EventType = "charge.succeeded"
+	EventTypeChargeupdated                                      EventType = "charge.updated"
+	EventTypeCheckoutsessionasyncPaymentFailed                  EventType = "checkout.session.async_payment_failed"
+	EventTypeCheckoutsessionasyncPaymentSucceeded               EventType = "checkout.session.async_payment_succeeded"
+	EventTypeCheckoutsessioncompleted                           EventType = "checkout.session.completed"
+	EventTypeCheckoutsessionexpired                             EventType = "checkout.session.expired"
+	EventTypeClimateordercanceled                               EventType = "climate.order.canceled"
+	EventTypeClimateordercreated                                EventType = "climate.order.created"
+	EventTypeClimateorderdelayed                                EventType = "climate.order.delayed"
+	EventTypeClimateorderdelivered                              EventType = "climate.order.delivered"
+	EventTypeClimateorderproductSubstituted                     EventType = "climate.order.product_substituted"
+	EventTypeClimateproductcreated                              EventType = "climate.product.created"
+	EventTypeClimateproductpricingUpdated                       EventType = "climate.product.pricing_updated"
+	EventTypeCouponcreated                                      EventType = "coupon.created"
+	EventTypeCoupondeleted                                      EventType = "coupon.deleted"
+	EventTypeCouponupdated                                      EventType = "coupon.updated"
+	EventTypeCreditNotecreated                                  EventType = "credit_note.created"
+	EventTypeCreditNoteupdated                                  EventType = "credit_note.updated"
+	EventTypeCreditNotevoided                                   EventType = "credit_note.voided"
+	EventTypeCustomercreated                                    EventType = "customer.created"
+	EventTypeCustomerdeleted                                    EventType = "customer.deleted"
+	EventTypeCustomerdiscountcreated                            EventType = "customer.discount.created"
+	EventTypeCustomerdiscountdeleted                            EventType = "customer.discount.deleted"
+	EventTypeCustomerdiscountupdated                            EventType = "customer.discount.updated"
+	EventTypeCustomersourcecreated                              EventType = "customer.source.created"
+	EventTypeCustomersourcedeleted                              EventType = "customer.source.deleted"
+	EventTypeCustomersourceexpiring                             EventType = "customer.source.expiring"
+	EventTypeCustomersourceupdated                              EventType = "customer.source.updated"
+	EventTypeCustomersubscriptioncreated                        EventType = "customer.subscription.created"
+	EventTypeCustomersubscriptiondeleted                        EventType = "customer.subscription.deleted"
+	EventTypeCustomersubscriptionpaused                         EventType = "customer.subscription.paused"
+	EventTypeCustomersubscriptionpendingUpdateApplied           EventType = "customer.subscription.pending_update_applied"
+	EventTypeCustomersubscriptionpendingUpdateExpired           EventType = "customer.subscription.pending_update_expired"
+	EventTypeCustomersubscriptionresumed                        EventType = "customer.subscription.resumed"
+	EventTypeCustomersubscriptiontrialWillEnd                   EventType = "customer.subscription.trial_will_end"
+	EventTypeCustomersubscriptionupdated                        EventType = "customer.subscription.updated"
+	EventTypeCustomertaxIdcreated                               EventType = "customer.tax_id.created"
+	EventTypeCustomertaxIddeleted                               EventType = "customer.tax_id.deleted"
+	EventTypeCustomertaxIdupdated                               EventType = "customer.tax_id.updated"
+	EventTypeCustomerupdated                                    EventType = "customer.updated"
+	EventTypeCustomerCashBalanceTransactioncreated              EventType = "customer_cash_balance_transaction.created"
+	EventTypeEntitlementsactiveEntitlementSummaryupdated        EventType = "entitlements.active_entitlement_summary.updated"
+	EventTypeFilecreated                                        EventType = "file.created"
+	EventTypeFinancialConnectionsaccountcreated                 EventType = "financial_connections.account.created"
+	EventTypeFinancialConnectionsaccountdeactivated             EventType = "financial_connections.account.deactivated"
+	EventTypeFinancialConnectionsaccountdisconnected            EventType = "financial_connections.account.disconnected"
+	EventTypeFinancialConnectionsaccountreactivated             EventType = "financial_connections.account.reactivated"
+	EventTypeFinancialConnectionsaccountrefreshedBalance        EventType = "financial_connections.account.refreshed_balance"
+	EventTypeFinancialConnectionsaccountrefreshedOwnership      EventType = "financial_connections.account.refreshed_ownership"
+	EventTypeFinancialConnectionsaccountrefreshedTransactions   EventType = "financial_connections.account.refreshed_transactions"
+	EventTypeIdentityverificationSessioncanceled                EventType = "identity.verification_session.canceled"
+	EventTypeIdentityverificationSessioncreated                 EventType = "identity.verification_session.created"
+	EventTypeIdentityverificationSessionprocessing              EventType = "identity.verification_session.processing"
+	EventTypeIdentityverificationSessionredacted                EventType = "identity.verification_session.redacted"
+	EventTypeIdentityverificationSessionrequiresInput           EventType = "identity.verification_session.requires_input"
+	EventTypeIdentityverificationSessionverified                EventType = "identity.verification_session.verified"
+	EventTypeInvoicecreated                                     EventType = "invoice.created"
+	EventTypeInvoicedeleted                                     EventType = "invoice.deleted"
+	EventTypeInvoicefinalizationFailed                          EventType = "invoice.finalization_failed"
+	EventTypeInvoicefinalized                                   EventType = "invoice.finalized"
+	EventTypeInvoicemarkedUncollectible                         EventType = "invoice.marked_uncollectible"
+	EventTypeInvoiceoverdue                                     EventType = "invoice.overdue"
+	EventTypeInvoicepaid                                        EventType = "invoice.paid"
+	EventTypeInvoicepaymentActionRequired                       EventType = "invoice.payment_action_required"
+	EventTypeInvoicepaymentFailed                               EventType = "invoice.payment_failed"
+	EventTypeInvoicepaymentSucceeded                            EventType = "invoice.payment_succeeded"
+	EventTypeInvoicesent                                        EventType = "invoice.sent"
+	EventTypeInvoiceupcoming                                    EventType = "invoice.upcoming"
+	EventTypeInvoiceupdated                                     EventType = "invoice.updated"
+	EventTypeInvoicevoided                                      EventType = "invoice.voided"
+	EventTypeInvoicewillBeDue                                   EventType = "invoice.will_be_due"
+	EventTypeInvoiceitemcreated                                 EventType = "invoiceitem.created"
+	EventTypeInvoiceitemdeleted                                 EventType = "invoiceitem.deleted"
+	EventTypeIssuingAuthorizationcreated                        EventType = "issuing_authorization.created"
+	EventTypeIssuingAuthorizationrequest                        EventType = "issuing_authorization.request"
+	EventTypeIssuingAuthorizationupdated                        EventType = "issuing_authorization.updated"
+	EventTypeIssuingCardcreated                                 EventType = "issuing_card.created"
+	EventTypeIssuingCardupdated                                 EventType = "issuing_card.updated"
+	EventTypeIssuingCardholdercreated                           EventType = "issuing_cardholder.created"
+	EventTypeIssuingCardholderupdated                           EventType = "issuing_cardholder.updated"
+	EventTypeIssuingDisputeclosed                               EventType = "issuing_dispute.closed"
+	EventTypeIssuingDisputecreated                              EventType = "issuing_dispute.created"
+	EventTypeIssuingDisputefundsReinstated                      EventType = "issuing_dispute.funds_reinstated"
+	EventTypeIssuingDisputefundsRescinded                       EventType = "issuing_dispute.funds_rescinded"
+	EventTypeIssuingDisputesubmitted                            EventType = "issuing_dispute.submitted"
+	EventTypeIssuingDisputeupdated                              EventType = "issuing_dispute.updated"
+	EventTypeIssuingPersonalizationDesignactivated              EventType = "issuing_personalization_design.activated"
+	EventTypeIssuingPersonalizationDesigndeactivated            EventType = "issuing_personalization_design.deactivated"
+	EventTypeIssuingPersonalizationDesignrejected               EventType = "issuing_personalization_design.rejected"
+	EventTypeIssuingPersonalizationDesignupdated                EventType = "issuing_personalization_design.updated"
+	EventTypeIssuingTokencreated                                EventType = "issuing_token.created"
+	EventTypeIssuingTokenupdated                                EventType = "issuing_token.updated"
+	EventTypeIssuingTransactioncreated                          EventType = "issuing_transaction.created"
+	EventTypeIssuingTransactionupdated                          EventType = "issuing_transaction.updated"
+	EventTypeMandateupdated                                     EventType = "mandate.updated"
+	EventTypePaymentIntentamountCapturableUpdated               EventType = "payment_intent.amount_capturable_updated"
+	EventTypePaymentIntentcanceled                              EventType = "payment_intent.canceled"
+	EventTypePaymentIntentcreated                               EventType = "payment_intent.created"
+	EventTypePaymentIntentpartiallyFunded                       EventType = "payment_intent.partially_funded"
+	EventTypePaymentIntentpaymentFailed                         EventType = "payment_intent.payment_failed"
+	EventTypePaymentIntentprocessing                            EventType = "payment_intent.processing"
+	EventTypePaymentIntentrequiresAction                        EventType = "payment_intent.requires_action"
+	EventTypePaymentIntentsucceeded                             EventType = "payment_intent.succeeded"
+	EventTypePaymentLinkcreated                                 EventType = "payment_link.created"
+	EventTypePaymentLinkupdated                                 EventType = "payment_link.updated"
+	EventTypePaymentMethodattached                              EventType = "payment_method.attached"
+	EventTypePaymentMethodautomaticallyUpdated                  EventType = "payment_method.automatically_updated"
+	EventTypePaymentMethoddetached                              EventType = "payment_method.detached"
+	EventTypePaymentMethodupdated                               EventType = "payment_method.updated"
+	EventTypePayoutcanceled                                     EventType = "payout.canceled"
+	EventTypePayoutcreated                                      EventType = "payout.created"
+	EventTypePayoutfailed                                       EventType = "payout.failed"
+	EventTypePayoutpaid                                         EventType = "payout.paid"
+	EventTypePayoutreconciliationCompleted                      EventType = "payout.reconciliation_completed"
+	EventTypePayoutupdated                                      EventType = "payout.updated"
+	EventTypePersoncreated                                      EventType = "person.created"
+	EventTypePersondeleted                                      EventType = "person.deleted"
+	EventTypePersonupdated                                      EventType = "person.updated"
+	EventTypePlancreated                                        EventType = "plan.created"
+	EventTypePlandeleted                                        EventType = "plan.deleted"
+	EventTypePlanupdated                                        EventType = "plan.updated"
+	EventTypePricecreated                                       EventType = "price.created"
+	EventTypePricedeleted                                       EventType = "price.deleted"
+	EventTypePriceupdated                                       EventType = "price.updated"
+	EventTypeProductcreated                                     EventType = "product.created"
+	EventTypeProductdeleted                                     EventType = "product.deleted"
+	EventTypeProductupdated                                     EventType = "product.updated"
+	EventTypePromotionCodecreated                               EventType = "promotion_code.created"
+	EventTypePromotionCodeupdated                               EventType = "promotion_code.updated"
+	EventTypeQuoteaccepted                                      EventType = "quote.accepted"
+	EventTypeQuotecanceled                                      EventType = "quote.canceled"
+	EventTypeQuotecreated                                       EventType = "quote.created"
+	EventTypeQuotefinalized                                     EventType = "quote.finalized"
+	EventTypeRadarearlyFraudWarningcreated                      EventType = "radar.early_fraud_warning.created"
+	EventTypeRadarearlyFraudWarningupdated                      EventType = "radar.early_fraud_warning.updated"
+	EventTypeRefundcreated                                      EventType = "refund.created"
+	EventTypeRefundupdated                                      EventType = "refund.updated"
+	EventTypeReportingreportRunfailed                           EventType = "reporting.report_run.failed"
+	EventTypeReportingreportRunsucceeded                        EventType = "reporting.report_run.succeeded"
+	EventTypeReportingreportTypeupdated                         EventType = "reporting.report_type.updated"
+	EventTypeReviewclosed                                       EventType = "review.closed"
+	EventTypeReviewopened                                       EventType = "review.opened"
+	EventTypeSetupIntentcanceled                                EventType = "setup_intent.canceled"
+	EventTypeSetupIntentcreated                                 EventType = "setup_intent.created"
+	EventTypeSetupIntentrequiresAction                          EventType = "setup_intent.requires_action"
+	EventTypeSetupIntentsetupFailed                             EventType = "setup_intent.setup_failed"
+	EventTypeSetupIntentsucceeded                               EventType = "setup_intent.succeeded"
+	EventTypeSigmascheduledQueryRuncreated                      EventType = "sigma.scheduled_query_run.created"
+	EventTypeSourcecanceled                                     EventType = "source.canceled"
+	EventTypeSourcechargeable                                   EventType = "source.chargeable"
+	EventTypeSourcefailed                                       EventType = "source.failed"
+	EventTypeSourcemandateNotification                          EventType = "source.mandate_notification"
+	EventTypeSourcerefundAttributesRequired                     EventType = "source.refund_attributes_required"
+	EventTypeSourcetransactioncreated                           EventType = "source.transaction.created"
+	EventTypeSourcetransactionupdated                           EventType = "source.transaction.updated"
+	EventTypeSubscriptionScheduleaborted                        EventType = "subscription_schedule.aborted"
+	EventTypeSubscriptionSchedulecanceled                       EventType = "subscription_schedule.canceled"
+	EventTypeSubscriptionSchedulecompleted                      EventType = "subscription_schedule.completed"
+	EventTypeSubscriptionSchedulecreated                        EventType = "subscription_schedule.created"
+	EventTypeSubscriptionScheduleexpiring                       EventType = "subscription_schedule.expiring"
+	EventTypeSubscriptionSchedulereleased                       EventType = "subscription_schedule.released"
+	EventTypeSubscriptionScheduleupdated                        EventType = "subscription_schedule.updated"
+	EventTypeTaxsettingsupdated                                 EventType = "tax.settings.updated"
+	EventTypeTaxRatecreated                                     EventType = "tax_rate.created"
+	EventTypeTaxRateupdated                                     EventType = "tax_rate.updated"
+	EventTypeTerminalreaderactionFailed                         EventType = "terminal.reader.action_failed"
+	EventTypeTerminalreaderactionSucceeded                      EventType = "terminal.reader.action_succeeded"
+	EventTypeTestHelperstestClockadvancing                      EventType = "test_helpers.test_clock.advancing"
+	EventTypeTestHelperstestClockcreated                        EventType = "test_helpers.test_clock.created"
+	EventTypeTestHelperstestClockdeleted                        EventType = "test_helpers.test_clock.deleted"
+	EventTypeTestHelperstestClockinternalFailure                EventType = "test_helpers.test_clock.internal_failure"
+	EventTypeTestHelperstestClockready                          EventType = "test_helpers.test_clock.ready"
+	EventTypeTopupcanceled                                      EventType = "topup.canceled"
+	EventTypeTopupcreated                                       EventType = "topup.created"
+	EventTypeTopupfailed                                        EventType = "topup.failed"
+	EventTypeTopupreversed                                      EventType = "topup.reversed"
+	EventTypeTopupsucceeded                                     EventType = "topup.succeeded"
+	EventTypeTransfercreated                                    EventType = "transfer.created"
+	EventTypeTransferreversed                                   EventType = "transfer.reversed"
+	EventTypeTransferupdated                                    EventType = "transfer.updated"
+	EventTypeTreasurycreditReversalcreated                      EventType = "treasury.credit_reversal.created"
+	EventTypeTreasurycreditReversalposted                       EventType = "treasury.credit_reversal.posted"
+	EventTypeTreasurydebitReversalcompleted                     EventType = "treasury.debit_reversal.completed"
+	EventTypeTreasurydebitReversalcreated                       EventType = "treasury.debit_reversal.created"
+	EventTypeTreasurydebitReversalinitialCreditGranted          EventType = "treasury.debit_reversal.initial_credit_granted"
+	EventTypeTreasuryfinancialAccountclosed                     EventType = "treasury.financial_account.closed"
+	EventTypeTreasuryfinancialAccountcreated                    EventType = "treasury.financial_account.created"
+	EventTypeTreasuryfinancialAccountfeaturesStatusUpdated      EventType = "treasury.financial_account.features_status_updated"
+	EventTypeTreasuryinboundTransfercanceled                    EventType = "treasury.inbound_transfer.canceled"
+	EventTypeTreasuryinboundTransfercreated                     EventType = "treasury.inbound_transfer.created"
+	EventTypeTreasuryinboundTransferfailed                      EventType = "treasury.inbound_transfer.failed"
+	EventTypeTreasuryinboundTransfersucceeded                   EventType = "treasury.inbound_transfer.succeeded"
+	EventTypeTreasuryoutboundPaymentcanceled                    EventType = "treasury.outbound_payment.canceled"
+	EventTypeTreasuryoutboundPaymentcreated                     EventType = "treasury.outbound_payment.created"
+	EventTypeTreasuryoutboundPaymentexpectedArrivalDateUpdated  EventType = "treasury.outbound_payment.expected_arrival_date_updated"
+	EventTypeTreasuryoutboundPaymentfailed                      EventType = "treasury.outbound_payment.failed"
+	EventTypeTreasuryoutboundPaymentposted                      EventType = "treasury.outbound_payment.posted"
+	EventTypeTreasuryoutboundPaymentreturned                    EventType = "treasury.outbound_payment.returned"
+	EventTypeTreasuryoutboundPaymenttrackingDetailsUpdated      EventType = "treasury.outbound_payment.tracking_details_updated"
+	EventTypeTreasuryoutboundTransfercanceled                   EventType = "treasury.outbound_transfer.canceled"
+	EventTypeTreasuryoutboundTransfercreated                    EventType = "treasury.outbound_transfer.created"
+	EventTypeTreasuryoutboundTransferexpectedArrivalDateUpdated EventType = "treasury.outbound_transfer.expected_arrival_date_updated"
+	EventTypeTreasuryoutboundTransferfailed                     EventType = "treasury.outbound_transfer.failed"
+	EventTypeTreasuryoutboundTransferposted                     EventType = "treasury.outbound_transfer.posted"
+	EventTypeTreasuryoutboundTransferreturned                   EventType = "treasury.outbound_transfer.returned"
+	EventTypeTreasuryoutboundTransfertrackingDetailsUpdated     EventType = "treasury.outbound_transfer.tracking_details_updated"
+	EventTypeTreasuryreceivedCreditcreated                      EventType = "treasury.received_credit.created"
+	EventTypeTreasuryreceivedCreditfailed                       EventType = "treasury.received_credit.failed"
+	EventTypeTreasuryreceivedCreditsucceeded                    EventType = "treasury.received_credit.succeeded"
+	EventTypeTreasuryreceivedDebitcreated                       EventType = "treasury.received_debit.created"
+)
+
+func (e *EventType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EventType(s)
+	case string:
+		*e = EventType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EventType: %T", src)
+	}
+	return nil
+}
+
+type NullEventType struct {
+	EventType EventType `json:"eventType"`
+	Valid     bool      `json:"valid"` // Valid is true if EventType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEventType) Scan(value interface{}) error {
+	if value == nil {
+		ns.EventType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EventType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEventType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EventType), nil
+}
+
+func (e EventType) Valid() bool {
+	switch e {
+	case EventTypeAccountapplicationauthorized,
+		EventTypeAccountapplicationdeauthorized,
+		EventTypeAccountexternalAccountcreated,
+		EventTypeAccountexternalAccountdeleted,
+		EventTypeAccountexternalAccountupdated,
+		EventTypeAccountupdated,
+		EventTypeApplicationFeecreated,
+		EventTypeApplicationFeerefundupdated,
+		EventTypeApplicationFeerefunded,
+		EventTypeBalanceavailable,
+		EventTypeBillingalerttriggered,
+		EventTypeBillingPortalconfigurationcreated,
+		EventTypeBillingPortalconfigurationupdated,
+		EventTypeBillingPortalsessioncreated,
+		EventTypeCapabilityupdated,
+		EventTypeCashBalancefundsAvailable,
+		EventTypeChargecaptured,
+		EventTypeChargedisputeclosed,
+		EventTypeChargedisputecreated,
+		EventTypeChargedisputefundsReinstated,
+		EventTypeChargedisputefundsWithdrawn,
+		EventTypeChargedisputeupdated,
+		EventTypeChargeexpired,
+		EventTypeChargefailed,
+		EventTypeChargepending,
+		EventTypeChargerefundupdated,
+		EventTypeChargerefunded,
+		EventTypeChargesucceeded,
+		EventTypeChargeupdated,
+		EventTypeCheckoutsessionasyncPaymentFailed,
+		EventTypeCheckoutsessionasyncPaymentSucceeded,
+		EventTypeCheckoutsessioncompleted,
+		EventTypeCheckoutsessionexpired,
+		EventTypeClimateordercanceled,
+		EventTypeClimateordercreated,
+		EventTypeClimateorderdelayed,
+		EventTypeClimateorderdelivered,
+		EventTypeClimateorderproductSubstituted,
+		EventTypeClimateproductcreated,
+		EventTypeClimateproductpricingUpdated,
+		EventTypeCouponcreated,
+		EventTypeCoupondeleted,
+		EventTypeCouponupdated,
+		EventTypeCreditNotecreated,
+		EventTypeCreditNoteupdated,
+		EventTypeCreditNotevoided,
+		EventTypeCustomercreated,
+		EventTypeCustomerdeleted,
+		EventTypeCustomerdiscountcreated,
+		EventTypeCustomerdiscountdeleted,
+		EventTypeCustomerdiscountupdated,
+		EventTypeCustomersourcecreated,
+		EventTypeCustomersourcedeleted,
+		EventTypeCustomersourceexpiring,
+		EventTypeCustomersourceupdated,
+		EventTypeCustomersubscriptioncreated,
+		EventTypeCustomersubscriptiondeleted,
+		EventTypeCustomersubscriptionpaused,
+		EventTypeCustomersubscriptionpendingUpdateApplied,
+		EventTypeCustomersubscriptionpendingUpdateExpired,
+		EventTypeCustomersubscriptionresumed,
+		EventTypeCustomersubscriptiontrialWillEnd,
+		EventTypeCustomersubscriptionupdated,
+		EventTypeCustomertaxIdcreated,
+		EventTypeCustomertaxIddeleted,
+		EventTypeCustomertaxIdupdated,
+		EventTypeCustomerupdated,
+		EventTypeCustomerCashBalanceTransactioncreated,
+		EventTypeEntitlementsactiveEntitlementSummaryupdated,
+		EventTypeFilecreated,
+		EventTypeFinancialConnectionsaccountcreated,
+		EventTypeFinancialConnectionsaccountdeactivated,
+		EventTypeFinancialConnectionsaccountdisconnected,
+		EventTypeFinancialConnectionsaccountreactivated,
+		EventTypeFinancialConnectionsaccountrefreshedBalance,
+		EventTypeFinancialConnectionsaccountrefreshedOwnership,
+		EventTypeFinancialConnectionsaccountrefreshedTransactions,
+		EventTypeIdentityverificationSessioncanceled,
+		EventTypeIdentityverificationSessioncreated,
+		EventTypeIdentityverificationSessionprocessing,
+		EventTypeIdentityverificationSessionredacted,
+		EventTypeIdentityverificationSessionrequiresInput,
+		EventTypeIdentityverificationSessionverified,
+		EventTypeInvoicecreated,
+		EventTypeInvoicedeleted,
+		EventTypeInvoicefinalizationFailed,
+		EventTypeInvoicefinalized,
+		EventTypeInvoicemarkedUncollectible,
+		EventTypeInvoiceoverdue,
+		EventTypeInvoicepaid,
+		EventTypeInvoicepaymentActionRequired,
+		EventTypeInvoicepaymentFailed,
+		EventTypeInvoicepaymentSucceeded,
+		EventTypeInvoicesent,
+		EventTypeInvoiceupcoming,
+		EventTypeInvoiceupdated,
+		EventTypeInvoicevoided,
+		EventTypeInvoicewillBeDue,
+		EventTypeInvoiceitemcreated,
+		EventTypeInvoiceitemdeleted,
+		EventTypeIssuingAuthorizationcreated,
+		EventTypeIssuingAuthorizationrequest,
+		EventTypeIssuingAuthorizationupdated,
+		EventTypeIssuingCardcreated,
+		EventTypeIssuingCardupdated,
+		EventTypeIssuingCardholdercreated,
+		EventTypeIssuingCardholderupdated,
+		EventTypeIssuingDisputeclosed,
+		EventTypeIssuingDisputecreated,
+		EventTypeIssuingDisputefundsReinstated,
+		EventTypeIssuingDisputefundsRescinded,
+		EventTypeIssuingDisputesubmitted,
+		EventTypeIssuingDisputeupdated,
+		EventTypeIssuingPersonalizationDesignactivated,
+		EventTypeIssuingPersonalizationDesigndeactivated,
+		EventTypeIssuingPersonalizationDesignrejected,
+		EventTypeIssuingPersonalizationDesignupdated,
+		EventTypeIssuingTokencreated,
+		EventTypeIssuingTokenupdated,
+		EventTypeIssuingTransactioncreated,
+		EventTypeIssuingTransactionupdated,
+		EventTypeMandateupdated,
+		EventTypePaymentIntentamountCapturableUpdated,
+		EventTypePaymentIntentcanceled,
+		EventTypePaymentIntentcreated,
+		EventTypePaymentIntentpartiallyFunded,
+		EventTypePaymentIntentpaymentFailed,
+		EventTypePaymentIntentprocessing,
+		EventTypePaymentIntentrequiresAction,
+		EventTypePaymentIntentsucceeded,
+		EventTypePaymentLinkcreated,
+		EventTypePaymentLinkupdated,
+		EventTypePaymentMethodattached,
+		EventTypePaymentMethodautomaticallyUpdated,
+		EventTypePaymentMethoddetached,
+		EventTypePaymentMethodupdated,
+		EventTypePayoutcanceled,
+		EventTypePayoutcreated,
+		EventTypePayoutfailed,
+		EventTypePayoutpaid,
+		EventTypePayoutreconciliationCompleted,
+		EventTypePayoutupdated,
+		EventTypePersoncreated,
+		EventTypePersondeleted,
+		EventTypePersonupdated,
+		EventTypePlancreated,
+		EventTypePlandeleted,
+		EventTypePlanupdated,
+		EventTypePricecreated,
+		EventTypePricedeleted,
+		EventTypePriceupdated,
+		EventTypeProductcreated,
+		EventTypeProductdeleted,
+		EventTypeProductupdated,
+		EventTypePromotionCodecreated,
+		EventTypePromotionCodeupdated,
+		EventTypeQuoteaccepted,
+		EventTypeQuotecanceled,
+		EventTypeQuotecreated,
+		EventTypeQuotefinalized,
+		EventTypeRadarearlyFraudWarningcreated,
+		EventTypeRadarearlyFraudWarningupdated,
+		EventTypeRefundcreated,
+		EventTypeRefundupdated,
+		EventTypeReportingreportRunfailed,
+		EventTypeReportingreportRunsucceeded,
+		EventTypeReportingreportTypeupdated,
+		EventTypeReviewclosed,
+		EventTypeReviewopened,
+		EventTypeSetupIntentcanceled,
+		EventTypeSetupIntentcreated,
+		EventTypeSetupIntentrequiresAction,
+		EventTypeSetupIntentsetupFailed,
+		EventTypeSetupIntentsucceeded,
+		EventTypeSigmascheduledQueryRuncreated,
+		EventTypeSourcecanceled,
+		EventTypeSourcechargeable,
+		EventTypeSourcefailed,
+		EventTypeSourcemandateNotification,
+		EventTypeSourcerefundAttributesRequired,
+		EventTypeSourcetransactioncreated,
+		EventTypeSourcetransactionupdated,
+		EventTypeSubscriptionScheduleaborted,
+		EventTypeSubscriptionSchedulecanceled,
+		EventTypeSubscriptionSchedulecompleted,
+		EventTypeSubscriptionSchedulecreated,
+		EventTypeSubscriptionScheduleexpiring,
+		EventTypeSubscriptionSchedulereleased,
+		EventTypeSubscriptionScheduleupdated,
+		EventTypeTaxsettingsupdated,
+		EventTypeTaxRatecreated,
+		EventTypeTaxRateupdated,
+		EventTypeTerminalreaderactionFailed,
+		EventTypeTerminalreaderactionSucceeded,
+		EventTypeTestHelperstestClockadvancing,
+		EventTypeTestHelperstestClockcreated,
+		EventTypeTestHelperstestClockdeleted,
+		EventTypeTestHelperstestClockinternalFailure,
+		EventTypeTestHelperstestClockready,
+		EventTypeTopupcanceled,
+		EventTypeTopupcreated,
+		EventTypeTopupfailed,
+		EventTypeTopupreversed,
+		EventTypeTopupsucceeded,
+		EventTypeTransfercreated,
+		EventTypeTransferreversed,
+		EventTypeTransferupdated,
+		EventTypeTreasurycreditReversalcreated,
+		EventTypeTreasurycreditReversalposted,
+		EventTypeTreasurydebitReversalcompleted,
+		EventTypeTreasurydebitReversalcreated,
+		EventTypeTreasurydebitReversalinitialCreditGranted,
+		EventTypeTreasuryfinancialAccountclosed,
+		EventTypeTreasuryfinancialAccountcreated,
+		EventTypeTreasuryfinancialAccountfeaturesStatusUpdated,
+		EventTypeTreasuryinboundTransfercanceled,
+		EventTypeTreasuryinboundTransfercreated,
+		EventTypeTreasuryinboundTransferfailed,
+		EventTypeTreasuryinboundTransfersucceeded,
+		EventTypeTreasuryoutboundPaymentcanceled,
+		EventTypeTreasuryoutboundPaymentcreated,
+		EventTypeTreasuryoutboundPaymentexpectedArrivalDateUpdated,
+		EventTypeTreasuryoutboundPaymentfailed,
+		EventTypeTreasuryoutboundPaymentposted,
+		EventTypeTreasuryoutboundPaymentreturned,
+		EventTypeTreasuryoutboundPaymenttrackingDetailsUpdated,
+		EventTypeTreasuryoutboundTransfercanceled,
+		EventTypeTreasuryoutboundTransfercreated,
+		EventTypeTreasuryoutboundTransferexpectedArrivalDateUpdated,
+		EventTypeTreasuryoutboundTransferfailed,
+		EventTypeTreasuryoutboundTransferposted,
+		EventTypeTreasuryoutboundTransferreturned,
+		EventTypeTreasuryoutboundTransfertrackingDetailsUpdated,
+		EventTypeTreasuryreceivedCreditcreated,
+		EventTypeTreasuryreceivedCreditfailed,
+		EventTypeTreasuryreceivedCreditsucceeded,
+		EventTypeTreasuryreceivedDebitcreated:
 		return true
 	}
 	return false
@@ -124,12 +1208,11 @@ func (e IntervalType) Valid() bool {
 type InvoiceStatus string
 
 const (
-	InvoiceStatusDRAFT         InvoiceStatus = "DRAFT"
-	InvoiceStatusOPEN          InvoiceStatus = "OPEN"
-	InvoiceStatusPAID          InvoiceStatus = "PAID"
-	InvoiceStatusPARTIALLYPAID InvoiceStatus = "PARTIALLY_PAID"
-	InvoiceStatusUNCOLLECTIBLE InvoiceStatus = "UNCOLLECTIBLE"
-	InvoiceStatusVOID          InvoiceStatus = "VOID"
+	InvoiceStatusDraft         InvoiceStatus = "draft"
+	InvoiceStatusOpen          InvoiceStatus = "open"
+	InvoiceStatusPaid          InvoiceStatus = "paid"
+	InvoiceStatusUncollectible InvoiceStatus = "uncollectible"
+	InvoiceStatusVoid          InvoiceStatus = "void"
 )
 
 func (e *InvoiceStatus) Scan(src interface{}) error {
@@ -169,12 +1252,115 @@ func (ns NullInvoiceStatus) Value() (driver.Value, error) {
 
 func (e InvoiceStatus) Valid() bool {
 	switch e {
-	case InvoiceStatusDRAFT,
-		InvoiceStatusOPEN,
-		InvoiceStatusPAID,
-		InvoiceStatusPARTIALLYPAID,
-		InvoiceStatusUNCOLLECTIBLE,
-		InvoiceStatusVOID:
+	case InvoiceStatusDraft,
+		InvoiceStatusOpen,
+		InvoiceStatusPaid,
+		InvoiceStatusUncollectible,
+		InvoiceStatusVoid:
+		return true
+	}
+	return false
+}
+
+type PaymentIntentCaptureMethod string
+
+const (
+	PaymentIntentCaptureMethodAutomatic      PaymentIntentCaptureMethod = "automatic"
+	PaymentIntentCaptureMethodAutomaticAsync PaymentIntentCaptureMethod = "automatic_async"
+	PaymentIntentCaptureMethodManual         PaymentIntentCaptureMethod = "manual"
+)
+
+func (e *PaymentIntentCaptureMethod) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PaymentIntentCaptureMethod(s)
+	case string:
+		*e = PaymentIntentCaptureMethod(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PaymentIntentCaptureMethod: %T", src)
+	}
+	return nil
+}
+
+type NullPaymentIntentCaptureMethod struct {
+	PaymentIntentCaptureMethod PaymentIntentCaptureMethod `json:"paymentIntentCaptureMethod"`
+	Valid                      bool                       `json:"valid"` // Valid is true if PaymentIntentCaptureMethod is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPaymentIntentCaptureMethod) Scan(value interface{}) error {
+	if value == nil {
+		ns.PaymentIntentCaptureMethod, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PaymentIntentCaptureMethod.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPaymentIntentCaptureMethod) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PaymentIntentCaptureMethod), nil
+}
+
+func (e PaymentIntentCaptureMethod) Valid() bool {
+	switch e {
+	case PaymentIntentCaptureMethodAutomatic,
+		PaymentIntentCaptureMethodAutomaticAsync,
+		PaymentIntentCaptureMethodManual:
+		return true
+	}
+	return false
+}
+
+type PaymentIntentSetupFutureUsage string
+
+const (
+	PaymentIntentSetupFutureUsageOffSession PaymentIntentSetupFutureUsage = "off_session"
+	PaymentIntentSetupFutureUsageOnSession  PaymentIntentSetupFutureUsage = "on_session"
+)
+
+func (e *PaymentIntentSetupFutureUsage) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PaymentIntentSetupFutureUsage(s)
+	case string:
+		*e = PaymentIntentSetupFutureUsage(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PaymentIntentSetupFutureUsage: %T", src)
+	}
+	return nil
+}
+
+type NullPaymentIntentSetupFutureUsage struct {
+	PaymentIntentSetupFutureUsage PaymentIntentSetupFutureUsage `json:"paymentIntentSetupFutureUsage"`
+	Valid                         bool                          `json:"valid"` // Valid is true if PaymentIntentSetupFutureUsage is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPaymentIntentSetupFutureUsage) Scan(value interface{}) error {
+	if value == nil {
+		ns.PaymentIntentSetupFutureUsage, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PaymentIntentSetupFutureUsage.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPaymentIntentSetupFutureUsage) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PaymentIntentSetupFutureUsage), nil
+}
+
+func (e PaymentIntentSetupFutureUsage) Valid() bool {
+	switch e {
+	case PaymentIntentSetupFutureUsageOffSession,
+		PaymentIntentSetupFutureUsageOnSession:
 		return true
 	}
 	return false
@@ -183,13 +1369,13 @@ func (e InvoiceStatus) Valid() bool {
 type PaymentIntentStatus string
 
 const (
-	PaymentIntentStatusRequiresPaymentMethod PaymentIntentStatus = "requires_payment_method"
-	PaymentIntentStatusRequiresConfirmation  PaymentIntentStatus = "requires_confirmation"
-	PaymentIntentStatusRequiresAction        PaymentIntentStatus = "requires_action"
-	PaymentIntentStatusProcessing            PaymentIntentStatus = "processing"
-	PaymentIntentStatusSucceeded             PaymentIntentStatus = "succeeded"
-	PaymentIntentStatusFailed                PaymentIntentStatus = "failed"
 	PaymentIntentStatusCanceled              PaymentIntentStatus = "canceled"
+	PaymentIntentStatusProcessing            PaymentIntentStatus = "processing"
+	PaymentIntentStatusRequiresAction        PaymentIntentStatus = "requires_action"
+	PaymentIntentStatusRequiresCapture       PaymentIntentStatus = "requires_capture"
+	PaymentIntentStatusRequiresConfirmation  PaymentIntentStatus = "requires_confirmation"
+	PaymentIntentStatusRequiresPaymentMethod PaymentIntentStatus = "requires_payment_method"
+	PaymentIntentStatusSucceeded             PaymentIntentStatus = "succeeded"
 )
 
 func (e *PaymentIntentStatus) Scan(src interface{}) error {
@@ -229,13 +1415,76 @@ func (ns NullPaymentIntentStatus) Value() (driver.Value, error) {
 
 func (e PaymentIntentStatus) Valid() bool {
 	switch e {
-	case PaymentIntentStatusRequiresPaymentMethod,
-		PaymentIntentStatusRequiresConfirmation,
-		PaymentIntentStatusRequiresAction,
+	case PaymentIntentStatusCanceled,
 		PaymentIntentStatusProcessing,
-		PaymentIntentStatusSucceeded,
-		PaymentIntentStatusFailed,
-		PaymentIntentStatusCanceled:
+		PaymentIntentStatusRequiresAction,
+		PaymentIntentStatusRequiresCapture,
+		PaymentIntentStatusRequiresConfirmation,
+		PaymentIntentStatusRequiresPaymentMethod,
+		PaymentIntentStatusSucceeded:
+		return true
+	}
+	return false
+}
+
+type PaymentMethodCardBrand string
+
+const (
+	PaymentMethodCardBrandAmex       PaymentMethodCardBrand = "amex"
+	PaymentMethodCardBrandDiners     PaymentMethodCardBrand = "diners"
+	PaymentMethodCardBrandDiscover   PaymentMethodCardBrand = "discover"
+	PaymentMethodCardBrandJcb        PaymentMethodCardBrand = "jcb"
+	PaymentMethodCardBrandMastercard PaymentMethodCardBrand = "mastercard"
+	PaymentMethodCardBrandUnionpay   PaymentMethodCardBrand = "unionpay"
+	PaymentMethodCardBrandUnknown    PaymentMethodCardBrand = "unknown"
+	PaymentMethodCardBrandVisa       PaymentMethodCardBrand = "visa"
+)
+
+func (e *PaymentMethodCardBrand) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PaymentMethodCardBrand(s)
+	case string:
+		*e = PaymentMethodCardBrand(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PaymentMethodCardBrand: %T", src)
+	}
+	return nil
+}
+
+type NullPaymentMethodCardBrand struct {
+	PaymentMethodCardBrand PaymentMethodCardBrand `json:"paymentMethodCardBrand"`
+	Valid                  bool                   `json:"valid"` // Valid is true if PaymentMethodCardBrand is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPaymentMethodCardBrand) Scan(value interface{}) error {
+	if value == nil {
+		ns.PaymentMethodCardBrand, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PaymentMethodCardBrand.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPaymentMethodCardBrand) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PaymentMethodCardBrand), nil
+}
+
+func (e PaymentMethodCardBrand) Valid() bool {
+	switch e {
+	case PaymentMethodCardBrandAmex,
+		PaymentMethodCardBrandDiners,
+		PaymentMethodCardBrandDiscover,
+		PaymentMethodCardBrandJcb,
+		PaymentMethodCardBrandMastercard,
+		PaymentMethodCardBrandUnionpay,
+		PaymentMethodCardBrandUnknown,
+		PaymentMethodCardBrandVisa:
 		return true
 	}
 	return false
@@ -244,8 +1493,45 @@ func (e PaymentIntentStatus) Valid() bool {
 type PaymentMethodType string
 
 const (
-	PaymentMethodTypeCARD        PaymentMethodType = "CARD"
-	PaymentMethodTypeBANKACCOUNT PaymentMethodType = "BANK_ACCOUNT"
+	PaymentMethodTypeAcssDebit        PaymentMethodType = "acss_debit"
+	PaymentMethodTypeAffirm           PaymentMethodType = "affirm"
+	PaymentMethodTypeAfterpayClearpay PaymentMethodType = "afterpay_clearpay"
+	PaymentMethodTypeAlipay           PaymentMethodType = "alipay"
+	PaymentMethodTypeAmazonPay        PaymentMethodType = "amazon_pay"
+	PaymentMethodTypeAuBecsDebit      PaymentMethodType = "au_becs_debit"
+	PaymentMethodTypeBacsDebit        PaymentMethodType = "bacs_debit"
+	PaymentMethodTypeBancontact       PaymentMethodType = "bancontact"
+	PaymentMethodTypeBlik             PaymentMethodType = "blik"
+	PaymentMethodTypeBoleto           PaymentMethodType = "boleto"
+	PaymentMethodTypeCard             PaymentMethodType = "card"
+	PaymentMethodTypeCardPresent      PaymentMethodType = "card_present"
+	PaymentMethodTypeCashapp          PaymentMethodType = "cashapp"
+	PaymentMethodTypeCustomerBalance  PaymentMethodType = "customer_balance"
+	PaymentMethodTypeEps              PaymentMethodType = "eps"
+	PaymentMethodTypeFpx              PaymentMethodType = "fpx"
+	PaymentMethodTypeGiropay          PaymentMethodType = "giropay"
+	PaymentMethodTypeGrabpay          PaymentMethodType = "grabpay"
+	PaymentMethodTypeIdeal            PaymentMethodType = "ideal"
+	PaymentMethodTypeInteracPresent   PaymentMethodType = "interac_present"
+	PaymentMethodTypeKlarna           PaymentMethodType = "klarna"
+	PaymentMethodTypeKonbini          PaymentMethodType = "konbini"
+	PaymentMethodTypeLink             PaymentMethodType = "link"
+	PaymentMethodTypeMobilepay        PaymentMethodType = "mobilepay"
+	PaymentMethodTypeMultibanco       PaymentMethodType = "multibanco"
+	PaymentMethodTypeOxxo             PaymentMethodType = "oxxo"
+	PaymentMethodTypeP24              PaymentMethodType = "p24"
+	PaymentMethodTypePaynow           PaymentMethodType = "paynow"
+	PaymentMethodTypePaypal           PaymentMethodType = "paypal"
+	PaymentMethodTypePix              PaymentMethodType = "pix"
+	PaymentMethodTypePromptpay        PaymentMethodType = "promptpay"
+	PaymentMethodTypeRevolutPay       PaymentMethodType = "revolut_pay"
+	PaymentMethodTypeSepaDebit        PaymentMethodType = "sepa_debit"
+	PaymentMethodTypeSofort           PaymentMethodType = "sofort"
+	PaymentMethodTypeSwish            PaymentMethodType = "swish"
+	PaymentMethodTypeTwint            PaymentMethodType = "twint"
+	PaymentMethodTypeUsBankAccount    PaymentMethodType = "us_bank_account"
+	PaymentMethodTypeWechatPay        PaymentMethodType = "wechat_pay"
+	PaymentMethodTypeZip              PaymentMethodType = "zip"
 )
 
 func (e *PaymentMethodType) Scan(src interface{}) error {
@@ -285,8 +1571,100 @@ func (ns NullPaymentMethodType) Value() (driver.Value, error) {
 
 func (e PaymentMethodType) Valid() bool {
 	switch e {
-	case PaymentMethodTypeCARD,
-		PaymentMethodTypeBANKACCOUNT:
+	case PaymentMethodTypeAcssDebit,
+		PaymentMethodTypeAffirm,
+		PaymentMethodTypeAfterpayClearpay,
+		PaymentMethodTypeAlipay,
+		PaymentMethodTypeAmazonPay,
+		PaymentMethodTypeAuBecsDebit,
+		PaymentMethodTypeBacsDebit,
+		PaymentMethodTypeBancontact,
+		PaymentMethodTypeBlik,
+		PaymentMethodTypeBoleto,
+		PaymentMethodTypeCard,
+		PaymentMethodTypeCardPresent,
+		PaymentMethodTypeCashapp,
+		PaymentMethodTypeCustomerBalance,
+		PaymentMethodTypeEps,
+		PaymentMethodTypeFpx,
+		PaymentMethodTypeGiropay,
+		PaymentMethodTypeGrabpay,
+		PaymentMethodTypeIdeal,
+		PaymentMethodTypeInteracPresent,
+		PaymentMethodTypeKlarna,
+		PaymentMethodTypeKonbini,
+		PaymentMethodTypeLink,
+		PaymentMethodTypeMobilepay,
+		PaymentMethodTypeMultibanco,
+		PaymentMethodTypeOxxo,
+		PaymentMethodTypeP24,
+		PaymentMethodTypePaynow,
+		PaymentMethodTypePaypal,
+		PaymentMethodTypePix,
+		PaymentMethodTypePromptpay,
+		PaymentMethodTypeRevolutPay,
+		PaymentMethodTypeSepaDebit,
+		PaymentMethodTypeSofort,
+		PaymentMethodTypeSwish,
+		PaymentMethodTypeTwint,
+		PaymentMethodTypeUsBankAccount,
+		PaymentMethodTypeWechatPay,
+		PaymentMethodTypeZip:
+		return true
+	}
+	return false
+}
+
+type PriceRecurringInterval string
+
+const (
+	PriceRecurringIntervalDay   PriceRecurringInterval = "day"
+	PriceRecurringIntervalMonth PriceRecurringInterval = "month"
+	PriceRecurringIntervalWeek  PriceRecurringInterval = "week"
+	PriceRecurringIntervalYear  PriceRecurringInterval = "year"
+)
+
+func (e *PriceRecurringInterval) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PriceRecurringInterval(s)
+	case string:
+		*e = PriceRecurringInterval(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PriceRecurringInterval: %T", src)
+	}
+	return nil
+}
+
+type NullPriceRecurringInterval struct {
+	PriceRecurringInterval PriceRecurringInterval `json:"priceRecurringInterval"`
+	Valid                  bool                   `json:"valid"` // Valid is true if PriceRecurringInterval is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPriceRecurringInterval) Scan(value interface{}) error {
+	if value == nil {
+		ns.PriceRecurringInterval, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PriceRecurringInterval.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPriceRecurringInterval) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PriceRecurringInterval), nil
+}
+
+func (e PriceRecurringInterval) Valid() bool {
+	switch e {
+	case PriceRecurringIntervalDay,
+		PriceRecurringIntervalMonth,
+		PriceRecurringIntervalWeek,
+		PriceRecurringIntervalYear:
 		return true
 	}
 	return false
@@ -295,8 +1673,8 @@ func (e PaymentMethodType) Valid() bool {
 type PriceType string
 
 const (
-	PriceTypeONETIME   PriceType = "ONE_TIME"
-	PriceTypeRECURRING PriceType = "RECURRING"
+	PriceTypeOneTime   PriceType = "one_time"
+	PriceTypeRecurring PriceType = "recurring"
 )
 
 func (e *PriceType) Scan(src interface{}) error {
@@ -336,8 +1714,118 @@ func (ns NullPriceType) Value() (driver.Value, error) {
 
 func (e PriceType) Valid() bool {
 	switch e {
-	case PriceTypeONETIME,
-		PriceTypeRECURRING:
+	case PriceTypeOneTime,
+		PriceTypeRecurring:
+		return true
+	}
+	return false
+}
+
+type QuoteStatus string
+
+const (
+	QuoteStatusAccepted QuoteStatus = "accepted"
+	QuoteStatusCanceled QuoteStatus = "canceled"
+	QuoteStatusDraft    QuoteStatus = "draft"
+	QuoteStatusOpen     QuoteStatus = "open"
+)
+
+func (e *QuoteStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = QuoteStatus(s)
+	case string:
+		*e = QuoteStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for QuoteStatus: %T", src)
+	}
+	return nil
+}
+
+type NullQuoteStatus struct {
+	QuoteStatus QuoteStatus `json:"quoteStatus"`
+	Valid       bool        `json:"valid"` // Valid is true if QuoteStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullQuoteStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.QuoteStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.QuoteStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullQuoteStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.QuoteStatus), nil
+}
+
+func (e QuoteStatus) Valid() bool {
+	switch e {
+	case QuoteStatusAccepted,
+		QuoteStatusCanceled,
+		QuoteStatusDraft,
+		QuoteStatusOpen:
+		return true
+	}
+	return false
+}
+
+type RefundReason string
+
+const (
+	RefundReasonDuplicate               RefundReason = "duplicate"
+	RefundReasonExpiredUncapturedCharge RefundReason = "expired_uncaptured_charge"
+	RefundReasonFraudulent              RefundReason = "fraudulent"
+	RefundReasonRequestedByCustomer     RefundReason = "requested_by_customer"
+)
+
+func (e *RefundReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RefundReason(s)
+	case string:
+		*e = RefundReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RefundReason: %T", src)
+	}
+	return nil
+}
+
+type NullRefundReason struct {
+	RefundReason RefundReason `json:"refundReason"`
+	Valid        bool         `json:"valid"` // Valid is true if RefundReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRefundReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.RefundReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RefundReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRefundReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RefundReason), nil
+}
+
+func (e RefundReason) Valid() bool {
+	switch e {
+	case RefundReasonDuplicate,
+		RefundReasonExpiredUncapturedCharge,
+		RefundReasonFraudulent,
+		RefundReasonRequestedByCustomer:
 		return true
 	}
 	return false
@@ -346,10 +1834,11 @@ func (e PriceType) Valid() bool {
 type RefundStatus string
 
 const (
-	RefundStatusPENDING   RefundStatus = "PENDING"
-	RefundStatusSUCCEEDED RefundStatus = "SUCCEEDED"
-	RefundStatusFAILED    RefundStatus = "FAILED"
-	RefundStatusCANCELED  RefundStatus = "CANCELED"
+	RefundStatusCanceled       RefundStatus = "canceled"
+	RefundStatusFailed         RefundStatus = "failed"
+	RefundStatusPending        RefundStatus = "pending"
+	RefundStatusSucceeded      RefundStatus = "succeeded"
+	RefundStatusRequiresAction RefundStatus = "requires_action"
 )
 
 func (e *RefundStatus) Scan(src interface{}) error {
@@ -389,10 +1878,129 @@ func (ns NullRefundStatus) Value() (driver.Value, error) {
 
 func (e RefundStatus) Valid() bool {
 	switch e {
-	case RefundStatusPENDING,
-		RefundStatusSUCCEEDED,
-		RefundStatusFAILED,
-		RefundStatusCANCELED:
+	case RefundStatusCanceled,
+		RefundStatusFailed,
+		RefundStatusPending,
+		RefundStatusSucceeded,
+		RefundStatusRequiresAction:
+		return true
+	}
+	return false
+}
+
+type ReviewClosedReason string
+
+const (
+	ReviewClosedReasonApproved        ReviewClosedReason = "approved"
+	ReviewClosedReasonDisputed        ReviewClosedReason = "disputed"
+	ReviewClosedReasonRedacted        ReviewClosedReason = "redacted"
+	ReviewClosedReasonRefunded        ReviewClosedReason = "refunded"
+	ReviewClosedReasonRefundedAsFraud ReviewClosedReason = "refunded_as_fraud"
+)
+
+func (e *ReviewClosedReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReviewClosedReason(s)
+	case string:
+		*e = ReviewClosedReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReviewClosedReason: %T", src)
+	}
+	return nil
+}
+
+type NullReviewClosedReason struct {
+	ReviewClosedReason ReviewClosedReason `json:"reviewClosedReason"`
+	Valid              bool               `json:"valid"` // Valid is true if ReviewClosedReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReviewClosedReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReviewClosedReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReviewClosedReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReviewClosedReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReviewClosedReason), nil
+}
+
+func (e ReviewClosedReason) Valid() bool {
+	switch e {
+	case ReviewClosedReasonApproved,
+		ReviewClosedReasonDisputed,
+		ReviewClosedReasonRedacted,
+		ReviewClosedReasonRefunded,
+		ReviewClosedReasonRefundedAsFraud:
+		return true
+	}
+	return false
+}
+
+type ReviewReason string
+
+const (
+	ReviewReasonApproved        ReviewReason = "approved"
+	ReviewReasonDisputed        ReviewReason = "disputed"
+	ReviewReasonManual          ReviewReason = "manual"
+	ReviewReasonRefunded        ReviewReason = "refunded"
+	ReviewReasonRefundedAsFraud ReviewReason = "refunded_as_fraud"
+	ReviewReasonRedacted        ReviewReason = "redacted"
+	ReviewReasonRule            ReviewReason = "rule"
+)
+
+func (e *ReviewReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReviewReason(s)
+	case string:
+		*e = ReviewReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReviewReason: %T", src)
+	}
+	return nil
+}
+
+type NullReviewReason struct {
+	ReviewReason ReviewReason `json:"reviewReason"`
+	Valid        bool         `json:"valid"` // Valid is true if ReviewReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReviewReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReviewReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReviewReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReviewReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReviewReason), nil
+}
+
+func (e ReviewReason) Valid() bool {
+	switch e {
+	case ReviewReasonApproved,
+		ReviewReasonDisputed,
+		ReviewReasonManual,
+		ReviewReasonRefunded,
+		ReviewReasonRefundedAsFraud,
+		ReviewReasonRedacted,
+		ReviewReasonRule:
 		return true
 	}
 	return false
@@ -401,13 +2009,14 @@ func (e RefundStatus) Valid() bool {
 type SubscriptionStatus string
 
 const (
-	SubscriptionStatusACTIVE            SubscriptionStatus = "ACTIVE"
-	SubscriptionStatusPASTDUE           SubscriptionStatus = "PAST_DUE"
-	SubscriptionStatusUNPAID            SubscriptionStatus = "UNPAID"
-	SubscriptionStatusCANCELED          SubscriptionStatus = "CANCELED"
-	SubscriptionStatusINCOMPLETE        SubscriptionStatus = "INCOMPLETE"
-	SubscriptionStatusINCOMPLETEEXPIRED SubscriptionStatus = "INCOMPLETE_EXPIRED"
-	SubscriptionStatusTRIALING          SubscriptionStatus = "TRIALING"
+	SubscriptionStatusActive            SubscriptionStatus = "active"
+	SubscriptionStatusCanceled          SubscriptionStatus = "canceled"
+	SubscriptionStatusIncomplete        SubscriptionStatus = "incomplete"
+	SubscriptionStatusIncompleteExpired SubscriptionStatus = "incomplete_expired"
+	SubscriptionStatusPastDue           SubscriptionStatus = "past_due"
+	SubscriptionStatusPaused            SubscriptionStatus = "paused"
+	SubscriptionStatusTrialing          SubscriptionStatus = "trialing"
+	SubscriptionStatusUnpaid            SubscriptionStatus = "unpaid"
 )
 
 func (e *SubscriptionStatus) Scan(src interface{}) error {
@@ -447,13 +2056,14 @@ func (ns NullSubscriptionStatus) Value() (driver.Value, error) {
 
 func (e SubscriptionStatus) Valid() bool {
 	switch e {
-	case SubscriptionStatusACTIVE,
-		SubscriptionStatusPASTDUE,
-		SubscriptionStatusUNPAID,
-		SubscriptionStatusCANCELED,
-		SubscriptionStatusINCOMPLETE,
-		SubscriptionStatusINCOMPLETEEXPIRED,
-		SubscriptionStatusTRIALING:
+	case SubscriptionStatusActive,
+		SubscriptionStatusCanceled,
+		SubscriptionStatusIncomplete,
+		SubscriptionStatusIncompleteExpired,
+		SubscriptionStatusPastDue,
+		SubscriptionStatusPaused,
+		SubscriptionStatusTrialing,
+		SubscriptionStatusUnpaid:
 		return true
 	}
 	return false
@@ -464,8 +2074,8 @@ type Charge struct {
 	CustomerID      *string            `json:"customerId"`
 	PaymentIntentID *string            `json:"paymentIntentId"`
 	Amount          float64            `json:"amount"`
-	Currency        string             `json:"currency"`
-	Status          string             `json:"status"`
+	Currency        Currency           `json:"currency"`
+	Status          ChargeStatus       `json:"status"`
 	Paid            bool               `json:"paid"`
 	Refunded        bool               `json:"refunded"`
 	FailureCode     *string            `json:"failureCode"`
@@ -475,17 +2085,17 @@ type Charge struct {
 }
 
 type CheckoutSession struct {
-	ID              string             `json:"id"`
-	CustomerID      *string            `json:"customerId"`
-	PaymentIntentID *string            `json:"paymentIntentId"`
-	Status          string             `json:"status"`
-	Mode            string             `json:"mode"`
-	SuccessUrl      string             `json:"successUrl"`
-	CancelUrl       string             `json:"cancelUrl"`
-	AmountTotal     int64              `json:"amountTotal"`
-	Currency        string             `json:"currency"`
-	CreatedAt       pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
+	ID              string                `json:"id"`
+	CustomerID      *string               `json:"customerId"`
+	PaymentIntentID *string               `json:"paymentIntentId"`
+	Status          CheckoutSessionStatus `json:"status"`
+	Mode            CheckoutSessionMode   `json:"mode"`
+	SuccessUrl      string                `json:"successUrl"`
+	CancelUrl       string                `json:"cancelUrl"`
+	AmountTotal     int64                 `json:"amountTotal"`
+	Currency        Currency              `json:"currency"`
+	CreatedAt       pgtype.Timestamptz    `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamptz    `json:"updatedAt"`
 }
 
 type Coupon struct {
@@ -493,8 +2103,8 @@ type Coupon struct {
 	Name             string             `json:"name"`
 	AmountOff        int64              `json:"amountOff"`
 	PercentOff       float64            `json:"percentOff"`
-	Currency         string             `json:"currency"`
-	Duration         string             `json:"duration"`
+	Currency         Currency           `json:"currency"`
+	Duration         CouponDuration     `json:"duration"`
 	DurationInMonths int32              `json:"durationInMonths"`
 	MaxRedemptions   int32              `json:"maxRedemptions"`
 	TimesRedeemed    int32              `json:"timesRedeemed"`
@@ -526,9 +2136,9 @@ type Dispute struct {
 	ID            string             `json:"id"`
 	ChargeID      string             `json:"chargeId"`
 	Amount        float64            `json:"amount"`
-	Currency      string             `json:"currency"`
-	Status        string             `json:"status"`
-	Reason        string             `json:"reason"`
+	Currency      Currency           `json:"currency"`
+	Status        DisputeStatus      `json:"status"`
+	Reason        DisputeReason      `json:"reason"`
 	EvidenceDueBy pgtype.Timestamptz `json:"evidenceDueBy"`
 	CreatedAt     pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt     pgtype.Timestamptz `json:"updatedAt"`
@@ -536,7 +2146,7 @@ type Dispute struct {
 
 type Event struct {
 	ID        string             `json:"id"`
-	Type      string             `json:"type"`
+	Type      EventType          `json:"type"`
 	Processed bool               `json:"processed"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
@@ -567,16 +2177,17 @@ type InvoiceItem struct {
 }
 
 type PaymentIntent struct {
-	ID               string              `json:"id"`
-	CustomerID       string              `json:"customerId"`
-	Amount           float64             `json:"amount"`
-	Currency         Currency            `json:"currency"`
-	Status           PaymentIntentStatus `json:"status"`
-	PaymentMethodID  *string             `json:"paymentMethodId"`
-	SetupFutureUsage *string             `json:"setupFutureUsage"`
-	ClientSecret     string              `json:"clientSecret"`
-	CreatedAt        pgtype.Timestamptz  `json:"createdAt"`
-	UpdatedAt        pgtype.Timestamptz  `json:"updatedAt"`
+	ID               string                            `json:"id"`
+	CustomerID       string                            `json:"customerId"`
+	Amount           float64                           `json:"amount"`
+	Currency         Currency                          `json:"currency"`
+	CaptureMethod    PaymentIntentCaptureMethod        `json:"captureMethod"`
+	Status           PaymentIntentStatus               `json:"status"`
+	PaymentMethodID  *string                           `json:"paymentMethodId"`
+	SetupFutureUsage NullPaymentIntentSetupFutureUsage `json:"setupFutureUsage"`
+	ClientSecret     string                            `json:"clientSecret"`
+	CreatedAt        pgtype.Timestamptz                `json:"createdAt"`
+	UpdatedAt        pgtype.Timestamptz                `json:"updatedAt"`
 }
 
 type PaymentLink struct {
@@ -584,38 +2195,38 @@ type PaymentLink struct {
 	Active    bool               `json:"active"`
 	Url       string             `json:"url"`
 	Amount    float64            `json:"amount"`
-	Currency  string             `json:"currency"`
+	Currency  Currency           `json:"currency"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
 }
 
 type PaymentMethod struct {
-	ID                  string             `json:"id"`
-	CustomerID          string             `json:"customerId"`
-	Type                PaymentMethodType  `json:"type"`
-	CardLast4           *string            `json:"cardLast4"`
-	CardBrand           *string            `json:"cardBrand"`
-	CardExpMonth        *int32             `json:"cardExpMonth"`
-	CardExpYear         *int32             `json:"cardExpYear"`
-	BankAccountLast4    *string            `json:"bankAccountLast4"`
-	BankAccountBankName *string            `json:"bankAccountBankName"`
-	IsDefault           bool               `json:"isDefault"`
-	CreatedAt           pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt           pgtype.Timestamptz `json:"updatedAt"`
+	ID                  string                     `json:"id"`
+	CustomerID          string                     `json:"customerId"`
+	Type                PaymentMethodType          `json:"type"`
+	CardLast4           *string                    `json:"cardLast4"`
+	CardBrand           NullPaymentMethodCardBrand `json:"cardBrand"`
+	CardExpMonth        *int32                     `json:"cardExpMonth"`
+	CardExpYear         *int32                     `json:"cardExpYear"`
+	BankAccountLast4    *string                    `json:"bankAccountLast4"`
+	BankAccountBankName *string                    `json:"bankAccountBankName"`
+	IsDefault           bool                       `json:"isDefault"`
+	CreatedAt           pgtype.Timestamptz         `json:"createdAt"`
+	UpdatedAt           pgtype.Timestamptz         `json:"updatedAt"`
 }
 
 type Price struct {
-	ID                     string             `json:"id"`
-	ProductID              string             `json:"productId"`
-	Type                   PriceType          `json:"type"`
-	Currency               Currency           `json:"currency"`
-	UnitAmount             float64            `json:"unitAmount"`
-	RecurringInterval      NullIntervalType   `json:"recurringInterval"`
-	RecurringIntervalCount int32              `json:"recurringIntervalCount"`
-	TrialPeriodDays        int32              `json:"trialPeriodDays"`
-	Active                 bool               `json:"active"`
-	CreatedAt              pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt              pgtype.Timestamptz `json:"updatedAt"`
+	ID                     string                     `json:"id"`
+	ProductID              string                     `json:"productId"`
+	Type                   PriceType                  `json:"type"`
+	Currency               Currency                   `json:"currency"`
+	UnitAmount             float64                    `json:"unitAmount"`
+	RecurringInterval      NullPriceRecurringInterval `json:"recurringInterval"`
+	RecurringIntervalCount int32                      `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32                      `json:"trialPeriodDays"`
+	Active                 bool                       `json:"active"`
+	CreatedAt              pgtype.Timestamptz         `json:"createdAt"`
+	UpdatedAt              pgtype.Timestamptz         `json:"updatedAt"`
 }
 
 type Product struct {
@@ -644,9 +2255,9 @@ type PromotionCode struct {
 type Quote struct {
 	ID          string             `json:"id"`
 	CustomerID  string             `json:"customerId"`
-	Status      string             `json:"status"`
+	Status      QuoteStatus        `json:"status"`
 	AmountTotal int64              `json:"amountTotal"`
-	Currency    string             `json:"currency"`
+	Currency    Currency           `json:"currency"`
 	ValidUntil  pgtype.Timestamptz `json:"validUntil"`
 	AcceptedAt  pgtype.Timestamptz `json:"acceptedAt"`
 	CanceledAt  pgtype.Timestamptz `json:"canceledAt"`
@@ -659,7 +2270,7 @@ type Refund struct {
 	ChargeID  string             `json:"chargeId"`
 	Amount    float64            `json:"amount"`
 	Status    RefundStatus       `json:"status"`
-	Reason    *string            `json:"reason"`
+	Reason    NullRefundReason   `json:"reason"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
 }
@@ -667,7 +2278,8 @@ type Refund struct {
 type Review struct {
 	ID              string             `json:"id"`
 	PaymentIntentID *string            `json:"paymentIntentId"`
-	Reason          string             `json:"reason"`
+	Reason          ReviewReason       `json:"reason"`
+	CloseReason     ReviewClosedReason `json:"closeReason"`
 	Status          string             `json:"status"`
 	OpenedAt        pgtype.Timestamptz `json:"openedAt"`
 	ClosedAt        pgtype.Timestamptz `json:"closedAt"`

@@ -9,6 +9,7 @@ package main
 import (
 	"goflare.io/payment"
 	"goflare.io/payment/charge"
+	"goflare.io/payment/checkout_session"
 	"goflare.io/payment/config"
 	"goflare.io/payment/coupon"
 	"goflare.io/payment/customer"
@@ -19,12 +20,17 @@ import (
 	"goflare.io/payment/handlers"
 	"goflare.io/payment/invoice"
 	"goflare.io/payment/payment_intent"
+	"goflare.io/payment/payment_link"
 	"goflare.io/payment/payment_method"
 	"goflare.io/payment/price"
 	"goflare.io/payment/product"
+	"goflare.io/payment/promotion_code"
+	"goflare.io/payment/quote"
 	"goflare.io/payment/refund"
+	"goflare.io/payment/review"
 	"goflare.io/payment/server"
 	"goflare.io/payment/subscription"
+	"goflare.io/payment/tax_rate"
 )
 
 // Injectors from wire.go:
@@ -54,6 +60,8 @@ func InitializeAuthService() (*server.Server, error) {
 	chargeService := charge.NewService(chargeRepository, transactionManager)
 	couponRepository := coupon.NewRepository(postgresPool)
 	couponService := coupon.NewService(couponRepository, transactionManager)
+	checkout_sessionRepository := checkout_session.NewRepository(postgresPool)
+	checkout_sessionService := checkout_session.NewService(checkout_sessionRepository, transactionManager)
 	discountRepository := discount.NewRepository(postgresPool)
 	discountService := discount.NewService(discountRepository, transactionManager)
 	disputesRepository := disputes.NewRepository(postgresPool, logger)
@@ -88,17 +96,27 @@ func InitializeAuthService() (*server.Server, error) {
 		return nil, err
 	}
 	payment_methodService := payment_method.NewService(payment_methodRepository, transactionManager, logger)
+	payment_linkRepository := payment_link.NewRepository(postgresPool)
+	payment_linkService := payment_link.NewService(payment_linkRepository, transactionManager)
 	payment_intentRepository, err := payment_intent.NewRepository(postgresPool, logger, multiCache, manager)
 	if err != nil {
 		return nil, err
 	}
 	payment_intentService := payment_intent.NewService(payment_intentRepository, transactionManager, logger)
+	promotion_codeRepository := promotion_code.NewRepository(postgresPool)
+	promotion_codeService := promotion_code.NewService(promotion_codeRepository, transactionManager)
 	refundRepository, err := refund.NewRepository(postgresPool, logger, multiCache, manager)
 	if err != nil {
 		return nil, err
 	}
 	refundService := refund.NewService(refundRepository, transactionManager, logger)
-	paymentPayment := payment.NewStripePayment(configConfig, service, chargeService, couponService, discountService, disputesService, eventService, productService, priceService, subscriptionService, invoiceService, payment_methodService, payment_intentService, refundService, logger)
+	reviewRepository := review.NewRepository(postgresPool)
+	reviewService := review.NewService(reviewRepository, transactionManager)
+	tax_rateRepository := tax_rate.NewRepository(postgresPool)
+	tax_rateService := tax_rate.NewService(tax_rateRepository, transactionManager)
+	quoteRepository := quote.NewRepository(postgresPool)
+	quoteService := quote.NewService(quoteRepository, transactionManager)
+	paymentPayment := payment.NewStripePayment(configConfig, service, chargeService, couponService, checkout_sessionService, discountService, disputesService, eventService, productService, priceService, subscriptionService, invoiceService, payment_methodService, payment_linkService, payment_intentService, promotion_codeService, refundService, reviewService, tax_rateService, quoteService, logger)
 	customerHandler := handlers.NewCustomerHandler(paymentPayment)
 	productHandler := handlers.NewProductHandler(paymentPayment, logger)
 	priceHandler := handlers.NewPriceHandler(paymentPayment, logger)

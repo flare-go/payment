@@ -44,13 +44,13 @@ func (c *Customer) ConvertFromSQLCCustomer(sqlcCustomer any) *Customer {
 	switch sp := sqlcCustomer.(type) {
 	case *sqlc.Customer:
 		id = sp.ID
-		userID = sp.UserID
+		userID = uint64(sp.UserID)
 		balance = sp.Balance
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time
 	case *sqlc.GetCustomerRow:
 		id = sp.ID
-		userID = sp.UserID
+		userID = uint64(sp.UserID)
 		balance = sp.Balance
 		name = sp.Name
 		email = sp.Email
@@ -58,7 +58,7 @@ func (c *Customer) ConvertFromSQLCCustomer(sqlcCustomer any) *Customer {
 		updatedAt = sp.UpdatedAt.Time
 	case *sqlc.ListCustomersRow:
 		id = sp.ID
-		userID = sp.UserID
+		userID = uint64(sp.UserID)
 		balance = sp.Balance
 		name = sp.Name
 		email = sp.Email

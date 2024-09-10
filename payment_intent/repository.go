@@ -88,7 +88,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, paymentIntent *model
 		Currency:         sqlc.Currency(paymentIntent.Currency),
 		Status:           sqlc.PaymentIntentStatus(paymentIntent.Status),
 		PaymentMethodID:  &paymentIntent.PaymentMethodID,
-		SetupFutureUsage: &paymentIntent.SetupFutureUsage,
+		SetupFutureUsage: sqlc.NullPaymentIntentSetupFutureUsage{PaymentIntentSetupFutureUsage: sqlc.PaymentIntentSetupFutureUsage(paymentIntent.SetupFutureUsage), Valid: paymentIntent.SetupFutureUsage != ""},
 		ClientSecret:     paymentIntent.ClientSecret,
 	}); err != nil {
 		r.logger.Error(fmt.Sprintf("failed to create payment intent: %s", err.Error()))
@@ -139,7 +139,7 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, paymentIntent *model
 		ID:               paymentIntent.ID,
 		Status:           sqlc.PaymentIntentStatus(paymentIntent.Status),
 		PaymentMethodID:  &paymentIntent.PaymentMethodID,
-		SetupFutureUsage: &paymentIntent.SetupFutureUsage,
+		SetupFutureUsage: sqlc.NullPaymentIntentSetupFutureUsage{PaymentIntentSetupFutureUsage: sqlc.PaymentIntentSetupFutureUsage(paymentIntent.SetupFutureUsage), Valid: paymentIntent.SetupFutureUsage != ""},
 		ClientSecret:     paymentIntent.ClientSecret,
 	})
 	if err != nil {

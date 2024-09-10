@@ -6,15 +6,16 @@ INSERT INTO payment_intents (
     currency,
     status,
     payment_method_id,
+    capture_method,
     setup_future_usage,
     client_secret
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8
+             $1, $2, $3, $4, $5, $6, $7, $8,$9
          );
 -- RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
 
 -- name: GetPaymentIntent :one
-SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at
+SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret,capture_method, created_at, updated_at
 FROM payment_intents
 WHERE id = $1 LIMIT 1;
 
@@ -24,19 +25,20 @@ SET status = $2,
     payment_method_id = $3,
     setup_future_usage = $4,
     client_secret = $5,
+    capture_method = $6,
     updated_at = NOW()
 WHERE id = $1;
 -- RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
 
 -- name: ListPaymentIntents :many
-SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at
+SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, capture_method, created_at, updated_at
 FROM payment_intents
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
 
 -- name: ListPaymentIntentsByCustomer :many
-SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at
+SELECT id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, capture_method, created_at, updated_at
 FROM payment_intents
 WHERE customer_id = $1
 ORDER BY created_at DESC

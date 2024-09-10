@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"github.com/stripe/stripe-go/v79"
 	"go.uber.org/zap"
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 )
 
 type Service interface {
 	Create(ctx context.Context, refund *models.Refund) error
 	GetByID(ctx context.Context, id string) (*models.Refund, error)
-	UpdateStatus(ctx context.Context, id string, status enum.RefundStatus, reason string) error
+	UpdateStatus(ctx context.Context, id string, status stripe.RefundStatus, reason stripe.RefundReason) error
 	List(ctx context.Context, chargeID string, limit, offset uint64) ([]*models.Refund, error)
 	ListByChargeID(ctx context.Context, chargeID string) ([]*models.Refund, error)
 	Upsert(ctx context.Context, refund *models.PartialRefund) error
@@ -54,7 +54,7 @@ func (s *service) GetByID(ctx context.Context, id string) (*models.Refund, error
 	return refund, nil
 }
 
-func (s *service) UpdateStatus(ctx context.Context, id string, status enum.RefundStatus, reason string) error {
+func (s *service) UpdateStatus(ctx context.Context, id string, status stripe.RefundStatus, reason stripe.RefundReason) error {
 	var refund *models.Refund
 	if err := s.transactionManager.ExecuteTransaction(ctx, func(tx pgx.Tx) error {
 		var err error

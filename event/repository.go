@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"github.com/stripe/stripe-go/v79"
 	"go.uber.org/zap"
 
 	"goflare.io/ember"
@@ -34,7 +35,7 @@ func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.Mu
 func (r *repository) Create(ctx context.Context, event *models.Event) error {
 	return sqlc.New(r.conn).CreateEvent(ctx, sqlc.CreateEventParams{
 		ID:        event.ID,
-		Type:      event.Type,
+		Type:      sqlc.EventType(event.Type),
 		Processed: event.Processed,
 	})
 }
@@ -46,7 +47,7 @@ func (r *repository) GetByID(ctx context.Context, id string) (*models.Event, err
 	}
 	return &models.Event{
 		ID:        sqlcEvent.ID,
-		Type:      sqlcEvent.Type,
+		Type:      stripe.EventType(sqlcEvent.Type),
 		Processed: sqlcEvent.Processed,
 	}, nil
 }

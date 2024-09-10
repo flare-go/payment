@@ -26,14 +26,14 @@ INSERT INTO prices (
 `
 
 type CreatePriceParams struct {
-	ID                     string           `json:"id"`
-	ProductID              string           `json:"productId"`
-	Type                   PriceType        `json:"type"`
-	Currency               Currency         `json:"currency"`
-	UnitAmount             float64          `json:"unitAmount"`
-	RecurringInterval      NullIntervalType `json:"recurringInterval"`
-	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
-	TrialPeriodDays        int32            `json:"trialPeriodDays"`
+	ID                     string                     `json:"id"`
+	ProductID              string                     `json:"productId"`
+	Type                   PriceType                  `json:"type"`
+	Currency               Currency                   `json:"currency"`
+	UnitAmount             float64                    `json:"unitAmount"`
+	RecurringInterval      NullPriceRecurringInterval `json:"recurringInterval"`
+	RecurringIntervalCount int32                      `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32                      `json:"trialPeriodDays"`
 }
 
 func (q *Queries) CreatePrice(ctx context.Context, arg CreatePriceParams) error {
@@ -186,15 +186,15 @@ WHERE id = $1
 `
 
 type UpdatePriceParams struct {
-	ID                     string           `json:"id"`
-	ProductID              string           `json:"productId"`
-	Type                   PriceType        `json:"type"`
-	Currency               Currency         `json:"currency"`
-	UnitAmount             float64          `json:"unitAmount"`
-	RecurringInterval      NullIntervalType `json:"recurringInterval"`
-	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
-	TrialPeriodDays        int32            `json:"trialPeriodDays"`
-	Active                 bool             `json:"active"`
+	ID                     string                     `json:"id"`
+	ProductID              string                     `json:"productId"`
+	Type                   PriceType                  `json:"type"`
+	Currency               Currency                   `json:"currency"`
+	UnitAmount             float64                    `json:"unitAmount"`
+	RecurringInterval      NullPriceRecurringInterval `json:"recurringInterval"`
+	RecurringIntervalCount int32                      `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32                      `json:"trialPeriodDays"`
+	Active                 bool                       `json:"active"`
 }
 
 func (q *Queries) UpdatePrice(ctx context.Context, arg UpdatePriceParams) error {
@@ -232,15 +232,15 @@ ON CONFLICT (id) DO UPDATE SET
 `
 
 type UpsertPriceParams struct {
-	ID                     string           `json:"id"`
-	ProductID              string           `json:"productId"`
-	Type                   PriceType        `json:"type"`
-	Currency               Currency         `json:"currency"`
-	UnitAmount             float64          `json:"unitAmount"`
-	RecurringInterval      NullIntervalType `json:"recurringInterval"`
-	RecurringIntervalCount int32            `json:"recurringIntervalCount"`
-	TrialPeriodDays        int32            `json:"trialPeriodDays"`
-	Active                 bool             `json:"active"`
+	ID                     string                     `json:"id"`
+	ProductID              string                     `json:"productId"`
+	Type                   PriceType                  `json:"type"`
+	Currency               Currency                   `json:"currency"`
+	UnitAmount             float64                    `json:"unitAmount"`
+	RecurringInterval      NullPriceRecurringInterval `json:"recurringInterval"`
+	RecurringIntervalCount int32                      `json:"recurringIntervalCount"`
+	TrialPeriodDays        int32                      `json:"trialPeriodDays"`
+	Active                 bool                       `json:"active"`
 }
 
 func (q *Queries) UpsertPrice(ctx context.Context, arg UpsertPriceParams) error {

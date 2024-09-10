@@ -86,7 +86,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, price *models.Price)
 		Type:                   sqlc.PriceType(price.Type),
 		Currency:               sqlc.Currency(price.Currency),
 		UnitAmount:             price.UnitAmount,
-		RecurringInterval:      sqlc.NullIntervalType{IntervalType: sqlc.IntervalType(price.RecurringInterval), Valid: price.RecurringInterval != ""},
+		RecurringInterval:      sqlc.NullPriceRecurringInterval{PriceRecurringInterval: sqlc.PriceRecurringInterval(price.RecurringInterval), Valid: price.RecurringInterval != ""},
 		RecurringIntervalCount: price.RecurringIntervalCount,
 		TrialPeriodDays:        price.TrialPeriodDays,
 	}); err != nil {
@@ -149,7 +149,7 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, price *models.Price)
 		Type:                   sqlc.PriceType(price.Type),
 		Currency:               sqlc.Currency(price.Currency),
 		UnitAmount:             price.UnitAmount,
-		RecurringInterval:      sqlc.NullIntervalType{IntervalType: sqlc.IntervalType(price.RecurringInterval), Valid: price.RecurringInterval != ""},
+		RecurringInterval:      sqlc.NullPriceRecurringInterval{PriceRecurringInterval: sqlc.PriceRecurringInterval(price.RecurringInterval), Valid: price.RecurringInterval != ""},
 		RecurringIntervalCount: price.RecurringIntervalCount,
 		TrialPeriodDays:        price.TrialPeriodDays,
 		Active:                 price.Active,

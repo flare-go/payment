@@ -3,6 +3,7 @@ package invoice
 import (
 	"context"
 	"fmt"
+	"github.com/stripe/stripe-go/v79"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -10,7 +11,6 @@ import (
 
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 )
 
 type Service interface {
@@ -128,7 +128,7 @@ func (s *service) PayInvoice(ctx context.Context, id string, amount float64) err
 			return fmt.Errorf("failed to get invoice: %w", err)
 		}
 
-		if invoice.Status == enum.InvoiceStatusPaid {
+		if invoice.Status == stripe.InvoiceStatusPaid {
 			return fmt.Errorf("invoice is already paid")
 		}
 
@@ -141,9 +141,9 @@ func (s *service) PayInvoice(ctx context.Context, id string, amount float64) err
 		invoice.PaidAt = time.Now()
 
 		if invoice.AmountRemaining == 0 {
-			invoice.Status = enum.InvoiceStatusPaid
+			invoice.Status = stripe.InvoiceStatusPaid
 		} else {
-			invoice.Status = enum.InvoiceStatusPartiallyPaid
+			invoice.Status = stripe.InvoiceStatusUncollectible
 		}
 
 		if err = s.repo.Update(ctx, tx, invoice); err != nil {
@@ -162,7 +162,7 @@ func (s *service) CreateInvoiceItem(ctx context.Context, item *models.InvoiceIte
 			return fmt.Errorf("failed to get invoice for item: %w", err)
 		}
 
-		if invoice.Status == enum.InvoiceStatusPaid {
+		if invoice.Status == stripe.InvoiceStatusPaid {
 			return fmt.Errorf("cannot add item to a paid invoice")
 		}
 
@@ -195,7 +195,7 @@ func (s *service) UpdateInvoiceItem(ctx context.Context, item *models.InvoiceIte
 			return fmt.Errorf("failed to get invoice for item: %w", err)
 		}
 
-		if invoice.Status == enum.InvoiceStatusPaid {
+		if invoice.Status == stripe.InvoiceStatusPaid {
 			return fmt.Errorf("cannot update item of a paid invoice")
 		}
 
@@ -232,7 +232,7 @@ func (s *service) DeleteInvoiceItem(ctx context.Context, id string) error {
 			return fmt.Errorf("failed to get invoice for item: %w", err)
 		}
 
-		if invoice.Status == enum.InvoiceStatusPaid {
+		if invoice.Status == stripe.InvoiceStatusPaid {
 			return fmt.Errorf("cannot delete item from a paid invoice")
 		}
 

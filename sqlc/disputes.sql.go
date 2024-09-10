@@ -13,7 +13,7 @@ import (
 
 const closeDispute = `-- name: CloseDispute :exec
 UPDATE disputes
-SET status = 'closed', updated_at = $2
+SET status = 'lost', updated_at = $2
 WHERE id = $1
 `
 
@@ -39,9 +39,9 @@ type CreateDisputeParams struct {
 	ID            string             `json:"id"`
 	ChargeID      string             `json:"chargeId"`
 	Amount        float64            `json:"amount"`
-	Currency      string             `json:"currency"`
-	Status        string             `json:"status"`
-	Reason        string             `json:"reason"`
+	Currency      Currency           `json:"currency"`
+	Status        DisputeStatus      `json:"status"`
+	Reason        DisputeReason      `json:"reason"`
 	EvidenceDueBy pgtype.Timestamptz `json:"evidenceDueBy"`
 	CreatedAt     pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt     pgtype.Timestamptz `json:"updatedAt"`
@@ -104,9 +104,9 @@ type UpdateDisputeParams struct {
 	ID            string             `json:"id"`
 	ChargeID      string             `json:"chargeId"`
 	Amount        float64            `json:"amount"`
-	Currency      string             `json:"currency"`
-	Status        string             `json:"status"`
-	Reason        string             `json:"reason"`
+	Currency      Currency           `json:"currency"`
+	Status        DisputeStatus      `json:"status"`
+	Reason        DisputeReason      `json:"reason"`
 	EvidenceDueBy pgtype.Timestamptz `json:"evidenceDueBy"`
 	UpdatedAt     pgtype.Timestamptz `json:"updatedAt"`
 }
@@ -152,9 +152,9 @@ type UpsertDisputeParams struct {
 	ID            string             `json:"id"`
 	ChargeID      string             `json:"chargeId"`
 	Amount        float64            `json:"amount"`
-	Currency      string             `json:"currency"`
-	Status        string             `json:"status"`
-	Reason        string             `json:"reason"`
+	Currency      Currency           `json:"currency"`
+	Status        DisputeStatus      `json:"status"`
+	Reason        DisputeReason      `json:"reason"`
 	EvidenceDueBy pgtype.Timestamptz `json:"evidenceDueBy"`
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stripe/stripe-go/v79"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -11,7 +12,6 @@ import (
 
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 )
 
 type Service interface {
@@ -91,7 +91,7 @@ func (s *service) Cancel(ctx context.Context, id string, cancelAtPeriodEnd bool)
 			return fmt.Errorf("failed to get subscription: %w", err)
 		}
 
-		if subscription.Status == enum.SubscriptionStatusCanceled {
+		if subscription.Status == stripe.SubscriptionStatusCanceled {
 			return errors.New("subscription is already canceled")
 		}
 
@@ -116,7 +116,7 @@ func (s *service) Renew(ctx context.Context, id string) error {
 			return fmt.Errorf("failed to get subscription: %w", err)
 		}
 
-		if subscription.Status != enum.SubscriptionStatusActive {
+		if subscription.Status != stripe.SubscriptionStatusActive {
 			return errors.New("only active subscriptions can be renewed")
 		}
 

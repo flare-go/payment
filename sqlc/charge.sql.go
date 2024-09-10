@@ -30,16 +30,16 @@ ON CONFLICT (id) DO UPDATE SET
 `
 
 type UpsertChargeParams struct {
-	ID              string  `json:"id"`
-	CustomerID      *string `json:"customerId"`
-	PaymentIntentID *string `json:"paymentIntentId"`
-	Amount          float64 `json:"amount"`
-	Currency        string  `json:"currency"`
-	Status          string  `json:"status"`
-	Paid            bool    `json:"paid"`
-	Refunded        bool    `json:"refunded"`
-	FailureCode     *string `json:"failureCode"`
-	FailureMessage  *string `json:"failureMessage"`
+	ID              string       `json:"id"`
+	CustomerID      *string      `json:"customerId"`
+	PaymentIntentID *string      `json:"paymentIntentId"`
+	Amount          float64      `json:"amount"`
+	Currency        Currency     `json:"currency"`
+	Status          ChargeStatus `json:"status"`
+	Paid            bool         `json:"paid"`
+	Refunded        bool         `json:"refunded"`
+	FailureCode     *string      `json:"failureCode"`
+	FailureMessage  *string      `json:"failureMessage"`
 }
 
 func (q *Queries) UpsertCharge(ctx context.Context, arg UpsertChargeParams) error {

@@ -21,7 +21,7 @@ INSERT INTO events (
 
 type CreateEventParams struct {
 	ID        string             `json:"id"`
-	Type      string             `json:"type"`
+	Type      EventType          `json:"type"`
 	Processed bool               `json:"processed"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`

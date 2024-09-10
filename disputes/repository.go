@@ -41,9 +41,9 @@ func (r *repository) Create(ctx context.Context, dispute *models.Dispute) error 
 		ID:            dispute.ID,
 		ChargeID:      dispute.ChargeID,
 		Amount:        float64(dispute.Amount),
-		Currency:      string(dispute.Currency),
-		Status:        dispute.Status,
-		Reason:        dispute.Reason,
+		Currency:      sqlc.Currency(dispute.Currency),
+		Status:        sqlc.DisputeStatus(dispute.Status),
+		Reason:        sqlc.DisputeReason(dispute.Reason),
 		EvidenceDueBy: pgtype.Timestamptz{Time: dispute.EvidenceDueBy},
 	}); err != nil {
 		r.logger.Error("Failed to create dispute", zap.Error(err))
@@ -73,9 +73,9 @@ func (r *repository) Update(ctx context.Context, dispute *models.Dispute) error 
 		ID:            dispute.ID,
 		ChargeID:      dispute.ChargeID,
 		Amount:        float64(dispute.Amount),
-		Currency:      string(dispute.Currency),
-		Status:        dispute.Status,
-		Reason:        dispute.Reason,
+		Currency:      sqlc.Currency(dispute.Currency),
+		Status:        sqlc.DisputeStatus(dispute.Status),
+		Reason:        sqlc.DisputeReason(dispute.Reason),
 		EvidenceDueBy: pgtype.Timestamptz{Time: dispute.EvidenceDueBy},
 	})
 
@@ -115,6 +115,14 @@ func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, dispute *models.Part
 	if dispute.Amount != nil {
 		args = append(args, *dispute.Amount)
 		updateClauses = append(updateClauses, fmt.Sprintf("amount = $%d", argIndex))
+		argIndex++
+	} else {
+		args = append(args, nil)
+	}
+
+	if dispute.Currency != nil {
+		args = append(args, *dispute.Currency)
+		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
 		argIndex++
 	} else {
 		args = append(args, nil)

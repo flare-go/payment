@@ -3,13 +3,13 @@ package payment_intent
 import (
 	"context"
 	"fmt"
+	"github.com/stripe/stripe-go/v79"
 
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 )
 
 type Service interface {
@@ -99,12 +99,12 @@ func (s *service) Confirm(ctx context.Context, id, paymentMethodID string) error
 			return fmt.Errorf("failed to get payment intent: %w", err)
 		}
 
-		if paymentIntent.Status != enum.PaymentIntentStatusRequiresPaymentMethod &&
-			paymentIntent.Status != enum.PaymentIntentStatusRequiresConfirmation {
+		if paymentIntent.Status != stripe.PaymentIntentStatusRequiresPaymentMethod &&
+			paymentIntent.Status != stripe.PaymentIntentStatusRequiresConfirmation {
 			return fmt.Errorf("payment intent cannot be confirmed in its current status: %s", paymentIntent.Status)
 		}
 
-		paymentIntent.Status = enum.PaymentIntentStatusSucceeded
+		paymentIntent.Status = stripe.PaymentIntentStatusSucceeded
 		paymentIntent.PaymentMethodID = paymentMethodID
 
 		return s.repo.Update(ctx, tx, paymentIntent)
@@ -118,12 +118,12 @@ func (s *service) Failed(ctx context.Context, id, paymentMethodID string) error 
 			return fmt.Errorf("failed to get payment intent: %w", err)
 		}
 
-		if paymentIntent.Status != enum.PaymentIntentStatusRequiresPaymentMethod &&
-			paymentIntent.Status != enum.PaymentIntentStatusRequiresConfirmation {
+		if paymentIntent.Status != stripe.PaymentIntentStatusRequiresPaymentMethod &&
+			paymentIntent.Status != stripe.PaymentIntentStatusRequiresConfirmation {
 			return fmt.Errorf("payment intent cannot be confirmed in its current status: %s", paymentIntent.Status)
 		}
 
-		paymentIntent.Status = enum.PaymentIntentStatusFailed
+		paymentIntent.Status = stripe.PaymentIntentStatusCanceled
 		paymentIntent.PaymentMethodID = paymentMethodID
 
 		return s.repo.Update(ctx, tx, paymentIntent)
@@ -137,12 +137,12 @@ func (s *service) Cancel(ctx context.Context, id string) error {
 			return fmt.Errorf("failed to get payment intent: %w", err)
 		}
 
-		if paymentIntent.Status == enum.PaymentIntentStatusSucceeded ||
-			paymentIntent.Status == enum.PaymentIntentStatusCanceled {
+		if paymentIntent.Status == stripe.PaymentIntentStatusSucceeded ||
+			paymentIntent.Status == stripe.PaymentIntentStatusCanceled {
 			return fmt.Errorf("payment intent cannot be canceled in its current status: %s", paymentIntent.Status)
 		}
 
-		paymentIntent.Status = enum.PaymentIntentStatusCanceled
+		paymentIntent.Status = stripe.PaymentIntentStatusCanceled
 
 		return s.repo.Update(ctx, tx, paymentIntent)
 	})

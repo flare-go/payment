@@ -1,27 +1,27 @@
 package models
 
 import (
-	"goflare.io/payment/models/enum"
+	"github.com/stripe/stripe-go/v79"
 	"goflare.io/payment/sqlc"
 	"time"
 )
 
 type Refund struct {
-	ID        string            `json:"id"`
-	ChargeID  string            `json:"charge_id"`
-	Amount    float64           `json:"amount"`
-	Status    enum.RefundStatus `json:"status"`
-	Reason    string            `json:"reason"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID        string              `json:"id"`
+	ChargeID  string              `json:"charge_id"`
+	Amount    float64             `json:"amount"`
+	Status    stripe.RefundStatus `json:"status"`
+	Reason    stripe.RefundReason `json:"reason"`
+	CreatedAt time.Time           `json:"created_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
 }
 
 type PartialRefund struct {
 	ID        string
 	ChargeID  *string
 	Amount    *float64
-	Status    *enum.RefundStatus
-	Reason    *string
+	Status    *stripe.RefundStatus
+	Reason    *stripe.RefundReason
 	CreatedAt *time.Time
 	UpdatedAt *time.Time
 }
@@ -34,8 +34,9 @@ func (r *Refund) ConvertFromSQLCRefund(sqlcRefund any) *Refund {
 
 	var (
 		amount               float64
-		id, chargeID, reason string
-		status               enum.RefundStatus
+		id, chargeID         string
+		reason               stripe.RefundReason
+		status               stripe.RefundStatus
 		createdAt, updatedAt time.Time
 	)
 
@@ -44,10 +45,10 @@ func (r *Refund) ConvertFromSQLCRefund(sqlcRefund any) *Refund {
 		id = sp.ID
 		chargeID = sp.ChargeID
 		amount = sp.Amount
-		if sp.Reason != nil {
-			reason = *sp.Reason
+		if sp.Reason.Valid {
+			reason = stripe.RefundReason(sp.Reason.RefundReason)
 		}
-		status = enum.RefundStatus(sp.Status)
+		status = stripe.RefundStatus(sp.Status)
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time
 	default:

@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"github.com/labstack/echo/v4"
+	"github.com/stripe/stripe-go/v79"
 	"net/http"
 
 	"goflare.io/payment"
-	"goflare.io/payment/models/enum"
 )
 
 type PaymentIntentHandler interface {
@@ -30,10 +30,10 @@ func NewPaymentIntentHandler(Payment payment.Payment) PaymentIntentHandler {
 // CreatePaymentIntent handles POST /payment_intents
 func (ph *paymentIntentHandler) CreatePaymentIntent(c echo.Context) error {
 	var req struct {
-		CustomerID      string        `json:"customer_id"`
-		Amount          uint64        `json:"amount"`
-		Currency        enum.Currency `json:"currency"`
-		PaymentMethodID string        `json:"payment_method_id,omitempty"`
+		CustomerID      string          `json:"customer_id"`
+		Amount          uint64          `json:"amount"`
+		Currency        stripe.Currency `json:"currency"`
+		PaymentMethodID string          `json:"payment_method_id,omitempty"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})

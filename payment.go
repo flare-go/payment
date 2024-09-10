@@ -2,9 +2,9 @@ package payment
 
 import (
 	"context"
+	"github.com/stripe/stripe-go/v79"
 
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 )
 
 type Payment interface {
@@ -38,7 +38,7 @@ type Payment interface {
 	DeletePaymentMethod(ctx context.Context, paymentMethodID string) error // Interacts with Stripe
 	ListPaymentMethods(ctx context.Context, customerID string) ([]*models.PaymentMethod, error)
 
-	CreatePaymentIntent(customerID, paymentMethodStripeID string, amount uint64, currency enum.Currency) error // Interacts with Stripe
+	CreatePaymentIntent(customerID, paymentMethodStripeID string, amount uint64, currency stripe.Currency) error // Interacts with Stripe
 	GetPaymentIntent(ctx context.Context, paymentIntentID string) (*models.PaymentIntent, error)
 	ConfirmPaymentIntent(paymentIntentID, paymentMethodID string) error // Interacts with Stripe
 	CancelPaymentIntent(paymentIntentID string) error

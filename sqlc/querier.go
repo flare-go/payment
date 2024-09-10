@@ -56,7 +56,7 @@ type Querier interface {
 	// RETURNING id, invoice_id, amount, description, created_at, updated_at;
 	GetInvoiceItem(ctx context.Context, id string) (*InvoiceItem, error)
 	// RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
-	GetPaymentIntent(ctx context.Context, id string) (*PaymentIntent, error)
+	GetPaymentIntent(ctx context.Context, id string) (*GetPaymentIntentRow, error)
 	// RETURNING id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, is_default, stripe_id, created_at, updated_at;
 	GetPaymentMethod(ctx context.Context, id string) (*PaymentMethod, error)
 	// RETURNING id, product_id, type, currency, unit_amount, recurring_interval, recurring_interval_count, trial_period_days, active, stripe_id, created_at, updated_at;
@@ -76,8 +76,8 @@ type Querier interface {
 	// RETURNING id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, stripe_id, created_at, updated_at;
 	ListInvoicesByCustomerID(ctx context.Context, arg ListInvoicesByCustomerIDParams) ([]*Invoice, error)
 	// RETURNING id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, stripe_id, client_secret, created_at, updated_at;
-	ListPaymentIntents(ctx context.Context, arg ListPaymentIntentsParams) ([]*PaymentIntent, error)
-	ListPaymentIntentsByCustomer(ctx context.Context, arg ListPaymentIntentsByCustomerParams) ([]*PaymentIntent, error)
+	ListPaymentIntents(ctx context.Context, arg ListPaymentIntentsParams) ([]*ListPaymentIntentsRow, error)
+	ListPaymentIntentsByCustomer(ctx context.Context, arg ListPaymentIntentsByCustomerParams) ([]*ListPaymentIntentsByCustomerRow, error)
 	ListPaymentMethods(ctx context.Context, arg ListPaymentMethodsParams) ([]*PaymentMethod, error)
 	ListPrices(ctx context.Context, productID string) ([]*Price, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]*Product, error)

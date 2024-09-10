@@ -17,7 +17,7 @@ WHERE id = $1;
 
 -- name: CloseDispute :exec
 UPDATE disputes
-SET status = 'closed', updated_at = $2
+SET status = 'lost', updated_at = $2
 WHERE id = $1;
 
 -- name: UpsertDispute :exec

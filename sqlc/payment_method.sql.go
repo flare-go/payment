@@ -29,16 +29,16 @@ INSERT INTO payment_methods (
 `
 
 type CreatePaymentMethodParams struct {
-	ID                  string            `json:"id"`
-	CustomerID          string            `json:"customerId"`
-	Type                PaymentMethodType `json:"type"`
-	CardLast4           *string           `json:"cardLast4"`
-	CardBrand           *string           `json:"cardBrand"`
-	CardExpMonth        *int32            `json:"cardExpMonth"`
-	CardExpYear         *int32            `json:"cardExpYear"`
-	BankAccountLast4    *string           `json:"bankAccountLast4"`
-	BankAccountBankName *string           `json:"bankAccountBankName"`
-	IsDefault           bool              `json:"isDefault"`
+	ID                  string                     `json:"id"`
+	CustomerID          string                     `json:"customerId"`
+	Type                PaymentMethodType          `json:"type"`
+	CardLast4           *string                    `json:"cardLast4"`
+	CardBrand           NullPaymentMethodCardBrand `json:"cardBrand"`
+	CardExpMonth        *int32                     `json:"cardExpMonth"`
+	CardExpYear         *int32                     `json:"cardExpYear"`
+	BankAccountLast4    *string                    `json:"bankAccountLast4"`
+	BankAccountBankName *string                    `json:"bankAccountBankName"`
+	IsDefault           bool                       `json:"isDefault"`
 }
 
 func (q *Queries) CreatePaymentMethod(ctx context.Context, arg CreatePaymentMethodParams) error {
@@ -161,16 +161,16 @@ WHERE
 `
 
 type UpdatePaymentMethodParams struct {
-	ID                  string             `json:"id"`
-	Type                PaymentMethodType  `json:"type"`
-	CardLast4           *string            `json:"cardLast4"`
-	CardBrand           *string            `json:"cardBrand"`
-	CardExpMonth        *int32             `json:"cardExpMonth"`
-	CardExpYear         *int32             `json:"cardExpYear"`
-	BankAccountLast4    *string            `json:"bankAccountLast4"`
-	BankAccountBankName *string            `json:"bankAccountBankName"`
-	IsDefault           bool               `json:"isDefault"`
-	UpdatedAt           pgtype.Timestamptz `json:"updatedAt"`
+	ID                  string                     `json:"id"`
+	Type                PaymentMethodType          `json:"type"`
+	CardLast4           *string                    `json:"cardLast4"`
+	CardBrand           NullPaymentMethodCardBrand `json:"cardBrand"`
+	CardExpMonth        *int32                     `json:"cardExpMonth"`
+	CardExpYear         *int32                     `json:"cardExpYear"`
+	BankAccountLast4    *string                    `json:"bankAccountLast4"`
+	BankAccountBankName *string                    `json:"bankAccountBankName"`
+	IsDefault           bool                       `json:"isDefault"`
+	UpdatedAt           pgtype.Timestamptz         `json:"updatedAt"`
 }
 
 func (q *Queries) UpdatePaymentMethod(ctx context.Context, arg UpdatePaymentMethodParams) error {
@@ -219,16 +219,16 @@ ON CONFLICT (id)
 `
 
 type UpsertPaymentMethodParams struct {
-	ID                  string            `json:"id"`
-	CustomerID          string            `json:"customerId"`
-	Type                PaymentMethodType `json:"type"`
-	CardLast4           *string           `json:"cardLast4"`
-	CardBrand           *string           `json:"cardBrand"`
-	CardExpMonth        *int32            `json:"cardExpMonth"`
-	CardExpYear         *int32            `json:"cardExpYear"`
-	BankAccountLast4    *string           `json:"bankAccountLast4"`
-	BankAccountBankName *string           `json:"bankAccountBankName"`
-	IsDefault           bool              `json:"isDefault"`
+	ID                  string                     `json:"id"`
+	CustomerID          string                     `json:"customerId"`
+	Type                PaymentMethodType          `json:"type"`
+	CardLast4           *string                    `json:"cardLast4"`
+	CardBrand           NullPaymentMethodCardBrand `json:"cardBrand"`
+	CardExpMonth        *int32                     `json:"cardExpMonth"`
+	CardExpYear         *int32                     `json:"cardExpYear"`
+	BankAccountLast4    *string                    `json:"bankAccountLast4"`
+	BankAccountBankName *string                    `json:"bankAccountBankName"`
+	IsDefault           bool                       `json:"isDefault"`
 }
 
 func (q *Queries) UpsertPaymentMethod(ctx context.Context, arg UpsertPaymentMethodParams) error {

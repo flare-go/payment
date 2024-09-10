@@ -1,9 +1,9 @@
 package models
 
 import (
+	"github.com/stripe/stripe-go/v79"
 	"time"
 
-	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
 )
 
@@ -12,9 +12,9 @@ import (
 type PaymentMethod struct {
 	ID                  string
 	CustomerID          string
-	Type                enum.PaymentMethodType
+	Type                stripe.PaymentMethodType
 	CardLast4           string
-	CardBrand           string
+	CardBrand           stripe.PaymentMethodCardBrand
 	CardExpMonth        int32
 	CardExpYear         int32
 	BankAccountLast4    string
@@ -27,9 +27,9 @@ type PaymentMethod struct {
 type PartialPaymentMethod struct {
 	ID                  string
 	CustomerID          *string
-	Type                *enum.PaymentMethodType
+	Type                *stripe.PaymentMethodType
 	CardLast4           *string
-	CardBrand           *string
+	CardBrand           *stripe.PaymentMethodCardBrand
 	CardExpMonth        *int32
 	CardExpYear         *int32
 	BankAccountLast4    *string
@@ -45,23 +45,24 @@ func NewPaymentMethod() *PaymentMethod {
 func (pm *PaymentMethod) ConvertFromSQLCPaymentMethod(sqlcPaymentMethod any) *PaymentMethod {
 
 	var (
-		paymentMethodType                                                           enum.PaymentMethodType
-		id, customerID, cardLast4, cardBrand, bankAccountLast4, bankAccountBankName string
-		cardExpMonth, cardExpYear                                                   int32
-		isDefault                                                                   bool
-		createdAt, updatedAt                                                        time.Time
+		paymentMethodType                                                stripe.PaymentMethodType
+		cardBrand                                                        stripe.PaymentMethodCardBrand
+		id, customerID, cardLast4, bankAccountLast4, bankAccountBankName string
+		cardExpMonth, cardExpYear                                        int32
+		isDefault                                                        bool
+		createdAt, updatedAt                                             time.Time
 	)
 
 	switch sp := sqlcPaymentMethod.(type) {
 	case *sqlc.PaymentMethod:
 		id = sp.ID
 		customerID = sp.CustomerID
-		paymentMethodType = enum.PaymentMethodType(sp.Type)
+		paymentMethodType = stripe.PaymentMethodType(sp.Type)
 		if sp.CardLast4 != nil {
 			cardLast4 = *sp.CardLast4
 		}
-		if sp.CardBrand != nil {
-			cardBrand = *sp.CardBrand
+		if sp.CardBrand.Valid {
+			cardBrand = stripe.PaymentMethodCardBrand(sp.CardBrand.PaymentMethodCardBrand)
 		}
 		if sp.CardExpMonth != nil {
 			cardExpMonth = *sp.CardExpMonth

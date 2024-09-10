@@ -1,31 +1,33 @@
 package models
 
 import (
-	"goflare.io/payment/models/enum"
+	"github.com/stripe/stripe-go/v79"
 	"goflare.io/payment/sqlc"
 	"time"
 )
 
 type Dispute struct {
-	ID            string        `json:"id"`
-	ChargeID      string        `json:"charge_id"`
-	Amount        int64         `json:"amount"`
-	Currency      enum.Currency `json:"currency"`
-	Status        string        `json:"status"`
-	Reason        string        `json:"reason"`
-	EvidenceDueBy time.Time     `json:"evidence_due_by"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
+	ID            string               `json:"id"`
+	ChargeID      string               `json:"charge_id"`
+	Amount        int64                `json:"amount"`
+	Currency      stripe.Currency      `json:"currency"`
+	Status        stripe.DisputeStatus `json:"status"`
+	Reason        stripe.DisputeReason `json:"reason"`
+	EvidenceDueBy time.Time            `json:"evidence_due_by"`
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
 }
 
 type PartialDispute struct {
-	ID        string
-	ChargeID  *string
-	Amount    *int64
-	Status    *string
-	Reason    *string
-	CreatedAt *time.Time
-	UpdatedAt *time.Time
+	ID            string
+	ChargeID      *string
+	Currency      *stripe.Currency
+	Amount        *int64
+	Status        *stripe.DisputeStatus
+	Reason        *stripe.DisputeReason
+	EvidenceDueBy *time.Time
+	CreatedAt     *time.Time
+	UpdatedAt     *time.Time
 }
 
 func NewDispute() *Dispute {
@@ -35,8 +37,10 @@ func NewDispute() *Dispute {
 func (d *Dispute) ConvertFromSQLCDispute(sqlcDispute any) *Dispute {
 
 	var (
-		id, chargeID, status, reason        string
-		currency                            enum.Currency
+		id, chargeID                        string
+		status                              stripe.DisputeStatus
+		reason                              stripe.DisputeReason
+		currency                            stripe.Currency
 		evidenceDueBy, createdAt, updatedAt time.Time
 	)
 
@@ -44,9 +48,9 @@ func (d *Dispute) ConvertFromSQLCDispute(sqlcDispute any) *Dispute {
 	case *sqlc.Dispute:
 		id = sp.ID
 		chargeID = sp.ChargeID
-		status = sp.Status
-		reason = sp.Reason
-		currency = enum.Currency(sp.Currency)
+		status = stripe.DisputeStatus(sp.Status)
+		reason = stripe.DisputeReason(sp.Reason)
+		currency = stripe.Currency(sp.Currency)
 		evidenceDueBy = sp.EvidenceDueBy.Time
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time

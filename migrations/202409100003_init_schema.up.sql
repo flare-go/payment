@@ -1,14 +1,5 @@
-CREATE TYPE price_type AS ENUM ('ONE_TIME', 'RECURRING');
-CREATE TYPE currency AS ENUM ('USD', 'EUR', 'JPY', 'TWD');
-CREATE TYPE interval_type AS ENUM ('day', 'week', 'month', 'year');
-CREATE TYPE subscription_status AS ENUM ('ACTIVE', 'PAST_DUE', 'UNPAID', 'CANCELED', 'INCOMPLETE', 'INCOMPLETE_EXPIRED', 'TRIALING');
-CREATE TYPE invoice_status AS ENUM ('DRAFT', 'OPEN', 'PAID', 'PARTIALLY_PAID', 'UNCOLLECTIBLE', 'VOID');
-CREATE TYPE payment_method_type AS ENUM ('CARD', 'BANK_ACCOUNT');
-CREATE TYPE payment_intent_status AS ENUM ('requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'succeeded', 'failed','canceled');
-CREATE TYPE refund_status AS ENUM ('PENDING', 'SUCCEEDED', 'FAILED', 'CANCELED');
-
 CREATE TABLE customers (
-                           id VARCHAR(255) PRIMARY KEY,
+                           id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                            user_id INTEGER NOT NULL REFERENCES users(id) UNIQUE,
                            balance BIGINT NOT NULL DEFAULT 0,
                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -17,7 +8,7 @@ CREATE TABLE customers (
 
 
 CREATE TABLE products (
-                          id VARCHAR(255) PRIMARY KEY,
+                          id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                           name VARCHAR(255) NOT NULL CHECK (length(name) >= 2),
                           description TEXT,
                           active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -27,12 +18,12 @@ CREATE TABLE products (
 );
 
 CREATE TABLE prices (
-                        id VARCHAR(255) PRIMARY KEY,
+                        id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                         product_id VARCHAR(255) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
                         type price_type NOT NULL,
                         currency currency NOT NULL,
                         unit_amount DECIMAL(10, 2) NOT NULL CHECK (unit_amount > 0),
-                        recurring_interval interval_type,
+                        recurring_interval price_recurring_interval,
                         recurring_interval_count INTEGER NOT NULL DEFAULT 1,
                         trial_period_days INTEGER NOT NULL DEFAULT 0 CHECK (trial_period_days >= 0),
                         active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -41,7 +32,7 @@ CREATE TABLE prices (
 );
 
 CREATE TABLE subscriptions (
-                               id VARCHAR(255) PRIMARY KEY,
+                               id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                customer_id VARCHAR(255) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
                                price_id VARCHAR(255) NOT NULL REFERENCES prices(id),
                                status subscription_status NOT NULL,
@@ -58,7 +49,7 @@ CREATE TABLE subscriptions (
 );
 
 CREATE TABLE invoices (
-                          id VARCHAR(255) PRIMARY KEY,
+                          id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                           customer_id VARCHAR(255) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
                           subscription_id VARCHAR(255) REFERENCES subscriptions(id) ON DELETE SET NULL,
                           status invoice_status NOT NULL,
@@ -75,7 +66,7 @@ CREATE TABLE invoices (
 );
 
 CREATE TABLE invoice_items (
-                               id VARCHAR(255) PRIMARY KEY,
+                               id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                invoice_id VARCHAR(255) NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
                                amount DECIMAL(10, 2) NOT NULL,
                                description TEXT,
@@ -85,11 +76,11 @@ CREATE TABLE invoice_items (
 
 
 CREATE TABLE payment_methods (
-                                 id VARCHAR(255) PRIMARY KEY,
+                                 id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                  customer_id VARCHAR(255) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
                                  type payment_method_type NOT NULL,
                                  card_last4 VARCHAR(4) CHECK (card_last4 ~ '^[0-9]{4}$'),
-                                 card_brand VARCHAR(50),
+                                 card_brand payment_method_card_brand,
                                  card_exp_month INTEGER CHECK (card_exp_month BETWEEN 1 AND 12),
                                  card_exp_year INTEGER CHECK (card_exp_year >= EXTRACT(YEAR FROM CURRENT_DATE)),
                                  bank_account_last4 VARCHAR(4) CHECK (bank_account_last4 ~ '^[0-9]{4}$'),
@@ -97,32 +88,33 @@ CREATE TABLE payment_methods (
                                  is_default BOOLEAN NOT NULL DEFAULT FALSE,
                                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                                 CHECK ((type = 'CARD' AND card_last4 IS NOT NULL AND card_brand IS NOT NULL AND card_exp_month IS NOT NULL AND card_exp_year IS NOT NULL) OR
-                                        (type = 'BANK_ACCOUNT' AND bank_account_last4 IS NOT NULL AND bank_account_bank_name IS NOT NULL))
+                                 CHECK ((type = 'card' AND card_last4 IS NOT NULL AND card_brand IS NOT NULL AND card_exp_month IS NOT NULL AND card_exp_year IS NOT NULL) OR
+                                        (type = 'us_bank_account' AND bank_account_last4 IS NOT NULL AND bank_account_bank_name IS NOT NULL))
 );
 
 
 
 CREATE TABLE payment_intents (
-                                 id VARCHAR(255) PRIMARY KEY,
+                                 id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                  customer_id VARCHAR(255) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
                                  amount DECIMAL(10, 2) NOT NULL CHECK (amount > 0),
                                  currency currency NOT NULL,
+                                 capture_method payment_intent_capture_method NOT NULL,
                                  status payment_intent_status NOT NULL,
                                  payment_method_id VARCHAR(255) REFERENCES payment_methods(id) ON DELETE SET NULL,
-                                 setup_future_usage VARCHAR(50),
+                                 setup_future_usage payment_intent_setup_future_usage,
                                  client_secret VARCHAR(255) NOT NULL,
                                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE charges (
-                         id VARCHAR(255) PRIMARY KEY,
+                         id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                          customer_id VARCHAR(255) REFERENCES customers(id),
                          payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
                          amount BIGINT NOT NULL,
-                         currency VARCHAR(3) NOT NULL,
-                         status VARCHAR(50) NOT NULL,
+                         currency currency NOT NULL,
+                         status charge_status NOT NULL,
                          paid BOOLEAN NOT NULL,
                          refunded BOOLEAN NOT NULL,
                          failure_code VARCHAR(100),
@@ -133,42 +125,42 @@ CREATE TABLE charges (
 
 
 CREATE TABLE refunds (
-                         id VARCHAR(255) PRIMARY KEY,
+                         id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                          charge_id VARCHAR(255) NOT NULL REFERENCES charges(id) ON DELETE CASCADE,
                          amount DECIMAL(10, 2) NOT NULL CHECK (amount > 0),
                          status refund_status NOT NULL,
-                         reason TEXT,
+                         reason refund_reason,
                          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE events (
-                        id VARCHAR(255) PRIMARY KEY,
-                        type VARCHAR(255) NOT NULL,
+                        id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
+                        type event_type NOT NULL,
                         processed BOOLEAN NOT NULL DEFAULT FALSE,
                         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE disputes (
-                          id VARCHAR(255) PRIMARY KEY,
+                          id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                           charge_id VARCHAR(255) NOT NULL REFERENCES charges(id),
                           amount BIGINT NOT NULL,
-                          currency VARCHAR(3) NOT NULL,
-                          status VARCHAR(50) NOT NULL,
-                          reason VARCHAR(100) NOT NULL,
+                          currency currency NOT NULL,
+                          status dispute_status NOT NULL,
+                          reason dispute_reason NOT NULL,
                           evidence_due_by TIMESTAMP WITH TIME ZONE NOT NULL,
                           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE coupons (
-                         id VARCHAR(255) PRIMARY KEY,
+                         id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                          name VARCHAR(255) NOT NULL,
                          amount_off BIGINT NOT NULL DEFAULT 0,
                          percent_off DECIMAL(5,2) NOT NULL DEFAULT 0,
-                         currency VARCHAR(3) DEFAULT '' NOT NULL,
-                         duration VARCHAR(50) NOT NULL,
+                         currency currency NOT NULL,
+                         duration coupon_duration NOT NULL,
                          duration_in_months INTEGER NOT NULL DEFAULT 0,
                          max_redemptions INTEGER NOT NULL DEFAULT 0,
                          times_redeemed INTEGER NOT NULL DEFAULT 0,
@@ -180,7 +172,7 @@ CREATE TABLE coupons (
 
 
 CREATE TABLE discounts (
-                           id VARCHAR(255) PRIMARY KEY,
+                           id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                            customer_id VARCHAR(255) NOT NULL REFERENCES customers(id),
                            coupon_id VARCHAR(255) NOT NULL REFERENCES coupons(id),
                            start TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -191,7 +183,7 @@ CREATE TABLE discounts (
 
 -- 促銷代碼表
 CREATE TABLE promotion_codes (
-                                 id VARCHAR(255) PRIMARY KEY,
+                                 id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                  code VARCHAR(255) NOT NULL UNIQUE,
                                  coupon_id VARCHAR(255) NOT NULL REFERENCES coupons(id),
                                  customer_id VARCHAR(255) REFERENCES customers(id),
@@ -205,26 +197,26 @@ CREATE TABLE promotion_codes (
 
 -- 結帳會話表
 CREATE TABLE checkout_sessions (
-                                   id VARCHAR(255) PRIMARY KEY,
+                                   id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                    customer_id VARCHAR(255) REFERENCES customers(id),
                                    payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
-                                   status VARCHAR(50) NOT NULL,
-                                   mode VARCHAR(50) NOT NULL,
+                                   status checkout_session_status NOT NULL,
+                                   mode checkout_session_mode NOT NULL,
                                    success_url TEXT NOT NULL,
                                    cancel_url TEXT NOT NULL,
                                    amount_total BIGINT NOT NULL,
-                                   currency VARCHAR(3) NOT NULL,
+                                   currency currency NOT NULL,
                                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- 報價表
 CREATE TABLE quotes (
-                        id VARCHAR(255) PRIMARY KEY,
+                        id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                         customer_id VARCHAR(255) NOT NULL REFERENCES customers(id),
-                        status VARCHAR(50) NOT NULL,
+                        status quote_status NOT NULL,
                         amount_total BIGINT NOT NULL,
-                        currency VARCHAR(3) NOT NULL,
+                        currency currency NOT NULL,
                         valid_until TIMESTAMP WITH TIME ZONE,
                         accepted_at TIMESTAMP WITH TIME ZONE,
                         canceled_at TIMESTAMP WITH TIME ZONE,
@@ -234,18 +226,18 @@ CREATE TABLE quotes (
 
 -- 支付連結表
 CREATE TABLE payment_links (
-                               id VARCHAR(255) PRIMARY KEY,
+                               id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                                active BOOLEAN NOT NULL DEFAULT TRUE,
                                url TEXT NOT NULL,
                                amount BIGINT NOT NULL,
-                               currency VARCHAR(3) NOT NULL,
+                               currency currency NOT NULL,
                                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- 稅率表
 CREATE TABLE tax_rates (
-                           id VARCHAR(255) PRIMARY KEY,
+                           id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                            display_name VARCHAR(255) NOT NULL,
                            description TEXT,
                            jurisdiction VARCHAR(255),
@@ -258,10 +250,10 @@ CREATE TABLE tax_rates (
 
 -- 審查表
 CREATE TABLE reviews (
-                         id VARCHAR(255) PRIMARY KEY,
+                         id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                          payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
-                         reason VARCHAR(100) NOT NULL,
-                         close VARCHAR(100) NOT NULL,
+                         reason review_reason NOT NULL,
+                         close_reason review_closed_reason NOT NULL,
                          status VARCHAR(50) NOT NULL,
                          opened_at TIMESTAMP WITH TIME ZONE NOT NULL,
                          closed_at TIMESTAMP WITH TIME ZONE,

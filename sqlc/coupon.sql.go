@@ -26,8 +26,8 @@ type CreateCouponParams struct {
 	Name             string             `json:"name"`
 	AmountOff        int64              `json:"amountOff"`
 	PercentOff       float64            `json:"percentOff"`
-	Currency         string             `json:"currency"`
-	Duration         string             `json:"duration"`
+	Currency         Currency           `json:"currency"`
+	Duration         CouponDuration     `json:"duration"`
 	DurationInMonths int32              `json:"durationInMonths"`
 	MaxRedemptions   int32              `json:"maxRedemptions"`
 	TimesRedeemed    int32              `json:"timesRedeemed"`
@@ -169,8 +169,8 @@ type UpdateCouponParams struct {
 	Name             string             `json:"name"`
 	AmountOff        int64              `json:"amountOff"`
 	PercentOff       float64            `json:"percentOff"`
-	Currency         string             `json:"currency"`
-	Duration         string             `json:"duration"`
+	Currency         Currency           `json:"currency"`
+	Duration         CouponDuration     `json:"duration"`
 	DurationInMonths int32              `json:"durationInMonths"`
 	MaxRedemptions   int32              `json:"maxRedemptions"`
 	TimesRedeemed    int32              `json:"timesRedeemed"`
@@ -263,8 +263,8 @@ type UpsertCouponParams struct {
 	CreatedAt        pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt        pgtype.Timestamptz `json:"updatedAt"`
 	Name             *string            `json:"name"`
-	Currency         *string            `json:"currency"`
-	Duration         *string            `json:"duration"`
+	Currency         NullCurrency       `json:"currency"`
+	Duration         NullCouponDuration `json:"duration"`
 	AmountOff        *int64             `json:"amountOff"`
 	PercentOff       float64            `json:"percentOff"`
 	DurationInMonths *int32             `json:"durationInMonths"`

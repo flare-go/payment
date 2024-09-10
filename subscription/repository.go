@@ -3,6 +3,7 @@ package subscription
 import (
 	"context"
 	"fmt"
+	"github.com/stripe/stripe-go/v79"
 	"reflect"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"goflare.io/ignite"
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
-	"goflare.io/payment/models/enum"
 	"goflare.io/payment/sqlc"
 )
 
@@ -191,7 +191,7 @@ func (r *repository) Cancel(ctx context.Context, tx pgx.Tx, id string, cancelAtP
 	}
 
 	now := time.Now()
-	subscription.Status = enum.SubscriptionStatusCanceled
+	subscription.Status = stripe.SubscriptionStatusCanceled
 	subscription.CanceledAt = &now
 	subscription.CancelAtPeriodEnd = cancelAtPeriodEnd
 
@@ -248,7 +248,7 @@ func (r *repository) GetExpiringSubscriptions(ctx context.Context, tx pgx.Tx, ex
 	// 使用 sqlc 生成的查詢方法
 	sqlcSubscriptions, err := sqlc.New(r.conn).WithTx(tx).GetExpiringSubscriptions(ctx, sqlc.GetExpiringSubscriptionsParams{
 		CurrentPeriodEnd: pgtype.Timestamptz{Time: expirationDate},
-		Status:           sqlc.SubscriptionStatus(enum.SubscriptionStatusActive),
+		Status:           sqlc.SubscriptionStatus(stripe.SubscriptionStatusActive),
 	})
 	if err != nil {
 		r.logger.Error("error getting expiring subscriptions", zap.Error(err))

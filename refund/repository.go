@@ -83,7 +83,7 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, refund *models.Refun
 		ChargeID: refund.ChargeID,
 		Amount:   refund.Amount,
 		Status:   sqlc.RefundStatus(refund.Status),
-		Reason:   &refund.Reason,
+		Reason:   sqlc.NullRefundReason{RefundReason: sqlc.RefundReason(refund.Reason), Valid: refund.Reason != ""},
 	}); err != nil {
 		return fmt.Errorf("failed to create refund: %w", err)
 	}
@@ -130,7 +130,7 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, refund *models.Refun
 	if err := sqlc.New(r.conn).WithTx(tx).UpdateRefund(ctx, sqlc.UpdateRefundParams{
 		ID:     refund.ID,
 		Status: sqlc.RefundStatus(refund.Status),
-		Reason: &refund.Reason,
+		Reason: sqlc.NullRefundReason{RefundReason: sqlc.RefundReason(refund.Reason)},
 	}); err != nil {
 		return fmt.Errorf("failed to update refund: %w", err)
 	}
