@@ -5,6 +5,7 @@ package main
 
 import (
 	"github.com/google/wire"
+
 	"goflare.io/payment"
 	"goflare.io/payment/charge"
 	"goflare.io/payment/checkout_session"
@@ -31,7 +32,7 @@ import (
 	"goflare.io/payment/tax_rate"
 )
 
-func InitializeAuthService() (*server.Server, error) {
+func InitializePaymentService() (*server.Server, error) {
 
 	wire.Build(
 		config.ProvideApplicationConfig,
@@ -83,6 +84,7 @@ func InitializeAuthService() (*server.Server, error) {
 		handlers.NewProductHandler,
 		handlers.NewPriceHandler,
 		handlers.NewPaymentIntentHandler,
+		handlers.NewWebhookHandler,
 		server.NewServer,
 	)
 

@@ -1,9 +1,11 @@
 package handlers
 
 import (
-	"github.com/labstack/echo/v4"
-	"goflare.io/payment"
 	"net/http"
+
+	"github.com/labstack/echo/v4"
+
+	"goflare.io/payment"
 )
 
 type RefundHandler interface {

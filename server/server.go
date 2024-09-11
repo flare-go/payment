@@ -2,12 +2,13 @@ package server
 
 import (
 	"context"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 
 	"goflare.io/payment/handlers"
 )
@@ -18,6 +19,7 @@ type Server struct {
 	Product       handlers.ProductHandler
 	Price         handlers.PriceHandler
 	PaymentIntent handlers.PaymentIntentHandler
+	Webhook       handlers.WebhookHandler
 }
 
 func NewServer(
@@ -25,12 +27,14 @@ func NewServer(
 	Product handlers.ProductHandler,
 	Price handlers.PriceHandler,
 	PaymentIntent handlers.PaymentIntentHandler,
+	Webhook handlers.WebhookHandler,
 ) *Server {
 	return &Server{
 		echo:          echo.New(),
 		Customer:      Customer,
 		Product:       Product,
 		Price:         Price,
+		Webhook:       Webhook,
 		PaymentIntent: PaymentIntent,
 	}
 }
@@ -88,4 +92,6 @@ func (s *Server) registerRoutes() {
 
 	s.echo.POST("/payment/intent", s.PaymentIntent.CreatePaymentIntent)
 	s.echo.POST("/payment/intent/confirm", s.PaymentIntent.ConfirmPaymentIntent)
+
+	s.echo.POST("/webhook", s.Webhook.HandleWebhook)
 }

@@ -2,10 +2,8 @@ package payment
 
 import (
 	"context"
-	"go.uber.org/zap"
-	"time"
-
 	"github.com/stripe/stripe-go/v79"
+	"go.uber.org/zap"
 )
 
 type Worker struct {
@@ -38,16 +36,23 @@ func (w Worker) Start() {
 
 			select {
 			case job := <-w.JobChannel:
-				if err := w.stripePayment.processEvent(job.Ctx, job.Event); err != nil {
-					w.stripePayment.logger.Error("Error processing event",
+				w.stripePayment.logger.Info("開始處理事件",
+					zap.String("event_type", string(job.Event.Type)),
+					zap.String("event_id", job.Event.ID))
+
+				err := w.stripePayment.processEvent(job.Ctx, job.Event)
+
+				if err != nil {
+					w.stripePayment.logger.Error("處理事件時發生錯誤",
 						zap.Error(err),
 						zap.String("event_type", string(job.Event.Type)),
 						zap.String("event_id", job.Event.ID))
+				} else {
+					w.stripePayment.logger.Info("事件處理完成",
+						zap.String("event_type", string(job.Event.Type)),
+						zap.String("event_id", job.Event.ID))
 				}
-			case <-time.After(5 * time.Minute): // 設置5分鐘的超時
-				w.stripePayment.logger.Info("Worker timed out due to inactivity", zap.Int("worker_id", w.ID))
-				w.Stop() // 停止該 Worker
-				return
+
 			case <-w.quit:
 				return
 			}
@@ -56,5 +61,5 @@ func (w Worker) Start() {
 }
 
 func (w Worker) Stop() {
-	close(w.quit) // 關閉 quit 通道，確保 Worker 正常停止
+	close(w.quit)
 }

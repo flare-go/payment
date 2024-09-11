@@ -2,13 +2,14 @@ package payment
 
 import (
 	"context"
+
 	"github.com/stripe/stripe-go/v79"
 
 	"goflare.io/payment/models"
 )
 
 type Payment interface {
-	CreateCustomer(ctx context.Context, userID uint64, email, name string) error // Interacts with Stripe
+	CreateCustomer(ctx context.Context, email, name string) error // Interacts with Stripe
 	GetCustomer(ctx context.Context, customerID string) (*models.Customer, error)
 	UpdateCustomerBalance(ctx context.Context, customer *models.Customer) error // Interacts with Stripe
 	DeleteCustomer(customerID string) error                                     // Interacts with Stripe

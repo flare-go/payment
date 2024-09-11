@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"net/http"
+
 	"github.com/labstack/echo/v4"
+
 	"goflare.io/payment"
 	"goflare.io/payment/models"
-	"net/http"
 )
 
 type CustomerHandler interface {
@@ -33,7 +35,7 @@ func (ch *customerHandler) CreateCustomer(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
 	}
 
-	if err := ch.Payment.CreateCustomer(c.Request().Context(), customer.UserID, customer.Email, customer.Name); err != nil {
+	if err := ch.Payment.CreateCustomer(c.Request().Context(), customer.Email, customer.Name); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create customer"})
 	}
 

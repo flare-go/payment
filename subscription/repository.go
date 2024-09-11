@@ -3,13 +3,12 @@ package subscription
 import (
 	"context"
 	"fmt"
-	"github.com/stripe/stripe-go/v79"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stripe/stripe-go/v79"
 	"go.uber.org/zap"
 
 	"goflare.io/ember"
@@ -98,11 +97,11 @@ func (r *repository) Create(ctx context.Context, tx pgx.Tx, subscription *models
 		CustomerID:         subscription.CustomerID,
 		PriceID:            subscription.PriceID,
 		Status:             sqlc.SubscriptionStatus(subscription.Status),
-		CurrentPeriodStart: pgtype.Timestamptz{Time: subscription.CurrentPeriodStart},
-		CurrentPeriodEnd:   pgtype.Timestamptz{Time: subscription.CurrentPeriodEnd},
+		CurrentPeriodStart: pgtype.Timestamptz{Time: subscription.CurrentPeriodStart, Valid: true},
+		CurrentPeriodEnd:   pgtype.Timestamptz{Time: subscription.CurrentPeriodEnd, Valid: true},
 		CancelAtPeriodEnd:  subscription.CancelAtPeriodEnd,
-		TrialStart:         pgtype.Timestamptz{Time: trialStart},
-		TrialEnd:           pgtype.Timestamptz{Time: trialEnd},
+		TrialStart:         pgtype.Timestamptz{Time: trialStart, Valid: true},
+		TrialEnd:           pgtype.Timestamptz{Time: trialEnd, Valid: true},
 	}); err != nil {
 		return fmt.Errorf("failed to create subscription: %w", err)
 	}
@@ -162,12 +161,12 @@ func (r *repository) Update(ctx context.Context, tx pgx.Tx, subscription *models
 		ID:                 subscription.ID,
 		PriceID:            subscription.PriceID,
 		Status:             sqlc.SubscriptionStatus(subscription.Status),
-		CurrentPeriodStart: pgtype.Timestamptz{Time: subscription.CurrentPeriodStart},
-		CurrentPeriodEnd:   pgtype.Timestamptz{Time: subscription.CurrentPeriodEnd},
-		CanceledAt:         pgtype.Timestamptz{Time: cancelAt},
+		CurrentPeriodStart: pgtype.Timestamptz{Time: subscription.CurrentPeriodStart, Valid: true},
+		CurrentPeriodEnd:   pgtype.Timestamptz{Time: subscription.CurrentPeriodEnd, Valid: true},
+		CanceledAt:         pgtype.Timestamptz{Time: cancelAt, Valid: true},
 		CancelAtPeriodEnd:  subscription.CancelAtPeriodEnd,
-		TrialStart:         pgtype.Timestamptz{Time: trialStart},
-		TrialEnd:           pgtype.Timestamptz{Time: trialEnd},
+		TrialStart:         pgtype.Timestamptz{Time: trialStart, Valid: true},
+		TrialEnd:           pgtype.Timestamptz{Time: trialEnd, Valid: true},
 	}); err != nil {
 		return fmt.Errorf("failed to update subscription: %w", err)
 	}
@@ -247,7 +246,7 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, customerID string, lim
 func (r *repository) GetExpiringSubscriptions(ctx context.Context, tx pgx.Tx, expirationDate time.Time) ([]*models.Subscription, error) {
 	// 使用 sqlc 生成的查詢方法
 	sqlcSubscriptions, err := sqlc.New(r.conn).WithTx(tx).GetExpiringSubscriptions(ctx, sqlc.GetExpiringSubscriptionsParams{
-		CurrentPeriodEnd: pgtype.Timestamptz{Time: expirationDate},
+		CurrentPeriodEnd: pgtype.Timestamptz{Time: expirationDate, Valid: true},
 		Status:           sqlc.SubscriptionStatus(stripe.SubscriptionStatusActive),
 	})
 	if err != nil {
@@ -278,104 +277,40 @@ func (r *repository) GetExpiringSubscriptions(ctx context.Context, tx pgx.Tx, ex
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, subscription *models.PartialSubscription) error {
-	query := `
+	const query = `
     INSERT INTO subscriptions (id, customer_id, price_id, status, current_period_start, current_period_end, canceled_at, cancel_at_period_end, trial_start, trial_end, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES (@id, @customer_id, @price_id, @status, @current_period_start, @current_period_end, @canceled_at, @cancel_at_period_end, @trial_start, @trial_end, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, subscriptions.customer_id),
+        price_id = COALESCE(@price_id, subscriptions.price_id),
+        status = COALESCE(@status, subscriptions.status),
+        current_period_start = COALESCE(@current_period_start, subscriptions.current_period_start),
+        current_period_end = COALESCE(@current_period_end, subscriptions.current_period_end),
+        canceled_at = COALESCE(@canceled_at, subscriptions.canceled_at),
+        cancel_at_period_end = COALESCE(@cancel_at_period_end, subscriptions.cancel_at_period_end),
+        trial_start = COALESCE(@trial_start, subscriptions.trial_start),
+        trial_end = COALESCE(@trial_end, subscriptions.trial_end),
+        updated_at = @updated_at
+    WHERE subscriptions.id = @id
     `
-	args := []interface{}{subscription.ID}
-	updateClauses := []string{}
-	argIndex := 2
 
-	if subscription.CustomerID != nil {
-		args = append(args, *subscription.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":                   subscription.ID,
+		"customer_id":          subscription.CustomerID,
+		"price_id":             subscription.PriceID,
+		"status":               subscription.Status,
+		"current_period_start": subscription.CurrentPeriodStart,
+		"current_period_end":   subscription.CurrentPeriodEnd,
+		"canceled_at":          subscription.CanceledAt,
+		"cancel_at_period_end": subscription.CancelAtPeriodEnd,
+		"trial_start":          subscription.TrialStart,
+		"trial_end":            subscription.TrialEnd,
+		"created_at":           subscription.CreatedAt,
+		"updated_at":           now,
 	}
 
-	if subscription.PriceID != nil {
-		args = append(args, *subscription.PriceID)
-		updateClauses = append(updateClauses, fmt.Sprintf("price_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.Status != nil {
-		args = append(args, *subscription.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.CurrentPeriodStart != nil {
-		args = append(args, *subscription.CurrentPeriodStart)
-		updateClauses = append(updateClauses, fmt.Sprintf("current_period_start = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.CurrentPeriodEnd != nil {
-		args = append(args, *subscription.CurrentPeriodEnd)
-		updateClauses = append(updateClauses, fmt.Sprintf("current_period_end = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.CanceledAt != nil {
-		args = append(args, *subscription.CanceledAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("canceled_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.CancelAtPeriodEnd != nil {
-		args = append(args, *subscription.CancelAtPeriodEnd)
-		updateClauses = append(updateClauses, fmt.Sprintf("cancel_at_period_end = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.TrialStart != nil {
-		args = append(args, *subscription.TrialStart)
-		updateClauses = append(updateClauses, fmt.Sprintf("trial_start = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.TrialEnd != nil {
-		args = append(args, *subscription.TrialEnd)
-		updateClauses = append(updateClauses, fmt.Sprintf("trial_end = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if subscription.CreatedAt != nil {
-		args = append(args, *subscription.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert subscription: %w", err)
 	}
 

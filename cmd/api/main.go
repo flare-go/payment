@@ -4,7 +4,7 @@ import "log"
 
 func main() {
 
-	server, err := InitializeAuthService()
+	server, err := InitializePaymentService()
 	if err != nil {
 		log.Fatal(err)
 		return

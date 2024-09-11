@@ -14,7 +14,7 @@ import (
 const createCustomer = `-- name: CreateCustomer :one
 INSERT INTO customers (
     id,
-    user_id,
+    user_email,
     balance
 ) VALUES (
              $1, $2, $3
@@ -23,9 +23,9 @@ RETURNING id, created_at, updated_at
 `
 
 type CreateCustomerParams struct {
-	ID      string `json:"id"`
-	UserID  int32  `json:"userId"`
-	Balance int64  `json:"balance"`
+	ID        string `json:"id"`
+	UserEmail string `json:"userEmail"`
+	Balance   int64  `json:"balance"`
 }
 
 type CreateCustomerRow struct {
@@ -35,7 +35,7 @@ type CreateCustomerRow struct {
 }
 
 func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (*CreateCustomerRow, error) {
-	row := q.db.QueryRow(ctx, createCustomer, arg.ID, arg.UserID, arg.Balance)
+	row := q.db.QueryRow(ctx, createCustomer, arg.ID, arg.UserEmail, arg.Balance)
 	var i CreateCustomerRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
 	return &i, err
@@ -51,16 +51,15 @@ func (q *Queries) DeleteCustomer(ctx context.Context, id string) error {
 }
 
 const getCustomer = `-- name: GetCustomer :one
-SELECT c.id, c.user_id, c.balance, c.created_at, c.updated_at,
+SELECT c.id, c.balance, c.created_at, c.updated_at,
        u.email, u.username as name
 FROM customers c
-         JOIN users u ON c.user_id = u.id
+         JOIN users u ON c.user_email = u.email
 WHERE c.id = $1
 `
 
 type GetCustomerRow struct {
 	ID        string             `json:"id"`
-	UserID    int32              `json:"userId"`
 	Balance   int64              `json:"balance"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
@@ -73,7 +72,6 @@ func (q *Queries) GetCustomer(ctx context.Context, dollar_1 *string) (*GetCustom
 	var i GetCustomerRow
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.Balance,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -84,10 +82,10 @@ func (q *Queries) GetCustomer(ctx context.Context, dollar_1 *string) (*GetCustom
 }
 
 const listCustomers = `-- name: ListCustomers :many
-SELECT c.id, c.user_id, c.balance, c.created_at, c.updated_at,
-       u.email, u.username as name
+SELECT c.id, c.user_email, c.balance, c.created_at, c.updated_at,
+    u.username as name
 FROM customers c
-         JOIN users u ON c.user_id = u.id
+         JOIN users u ON c.user_email = u.email
 ORDER BY c.created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -99,11 +97,10 @@ type ListCustomersParams struct {
 
 type ListCustomersRow struct {
 	ID        string             `json:"id"`
-	UserID    int32              `json:"userId"`
+	UserEmail string             `json:"userEmail"`
 	Balance   int64              `json:"balance"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
-	Email     string             `json:"email"`
 	Name      string             `json:"name"`
 }
 
@@ -118,11 +115,10 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 		var i ListCustomersRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
+			&i.UserEmail,
 			&i.Balance,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.Email,
 			&i.Name,
 		); err != nil {
 			return nil, err
@@ -170,17 +166,17 @@ func (q *Queries) UpdateCustomerBalance(ctx context.Context, arg UpdateCustomerB
 }
 
 const upsertCustomer = `-- name: UpsertCustomer :exec
-INSERT INTO customers (id, user_id, balance, updated_at)
+INSERT INTO customers (id, user_email, balance, updated_at)
 VALUES ($1, $2, $4, $3)
 ON CONFLICT (id) DO UPDATE SET
-                               user_id = COALESCE($2, customers.user_id),
+                               user_email = COALESCE($2, customers.user_email),
                                balance = COALESCE($4, customers.balance),
                                updated_at = $3
 `
 
 type UpsertCustomerParams struct {
 	ID        string             `json:"id"`
-	UserID    *int32             `json:"userId"`
+	UserEmail *string            `json:"userEmail"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`
 	Balance   *int64             `json:"balance"`
 }
@@ -188,7 +184,7 @@ type UpsertCustomerParams struct {
 func (q *Queries) UpsertCustomer(ctx context.Context, arg UpsertCustomerParams) error {
 	_, err := q.db.Exec(ctx, upsertCustomer,
 		arg.ID,
-		arg.UserID,
+		arg.UserEmail,
 		arg.UpdatedAt,
 		arg.Balance,
 	)

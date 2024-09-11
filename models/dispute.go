@@ -1,9 +1,11 @@
 package models
 
 import (
-	"github.com/stripe/stripe-go/v79"
-	"goflare.io/payment/sqlc"
 	"time"
+
+	"github.com/stripe/stripe-go/v79"
+
+	"goflare.io/payment/sqlc"
 )
 
 type Dispute struct {

@@ -1,5 +1,3 @@
-// service/coupon/service.go
-
 package coupon
 
 import (

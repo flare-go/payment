@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -253,96 +252,38 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, customerID string, lim
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, paymentMethod *models.PartialPaymentMethod) error {
-	query := `
+	const query = `
     INSERT INTO payment_methods (id, customer_id, type, card_last4, card_brand, card_exp_month, card_exp_year, bank_account_last4, bank_account_bank_name, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES (@id, @customer_id, @type, @card_last4, @card_brand, @card_exp_month, @card_exp_year, @bank_account_last4, @bank_account_bank_name, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, payment_methods.customer_id),
+        type = COALESCE(@type, payment_methods.type),
+        card_last4 = COALESCE(@card_last4, payment_methods.card_last4),
+        card_brand = COALESCE(@card_brand, payment_methods.card_brand),
+        card_exp_month = COALESCE(@card_exp_month, payment_methods.card_exp_month),
+        card_exp_year = COALESCE(@card_exp_year, payment_methods.card_exp_year),
+        bank_account_last4 = COALESCE(@bank_account_last4, payment_methods.bank_account_last4),
+        bank_account_bank_name = COALESCE(@bank_account_bank_name, payment_methods.bank_account_bank_name),
+        updated_at = @updated_at
+    WHERE payment_methods.id = @id
     `
-	args := []interface{}{paymentMethod.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if paymentMethod.CustomerID != nil {
-		args = append(args, *paymentMethod.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":                     paymentMethod.ID,
+		"customer_id":            paymentMethod.CustomerID,
+		"type":                   paymentMethod.Type,
+		"card_last4":             paymentMethod.CardLast4,
+		"card_brand":             paymentMethod.CardBrand,
+		"card_exp_month":         paymentMethod.CardExpMonth,
+		"card_exp_year":          paymentMethod.CardExpYear,
+		"bank_account_last4":     paymentMethod.BankAccountLast4,
+		"bank_account_bank_name": paymentMethod.BankAccountBankName,
+		"created_at":             paymentMethod.CreatedAt,
+		"updated_at":             now,
 	}
 
-	if paymentMethod.Type != nil {
-		args = append(args, *paymentMethod.Type)
-		updateClauses = append(updateClauses, fmt.Sprintf("type = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.CardLast4 != nil {
-		args = append(args, *paymentMethod.CardLast4)
-		updateClauses = append(updateClauses, fmt.Sprintf("card_last4 = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.CardBrand != nil {
-		args = append(args, *paymentMethod.CardBrand)
-		updateClauses = append(updateClauses, fmt.Sprintf("card_brand = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.CardExpMonth != nil {
-		args = append(args, *paymentMethod.CardExpMonth)
-		updateClauses = append(updateClauses, fmt.Sprintf("card_exp_month = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.CardExpYear != nil {
-		args = append(args, *paymentMethod.CardExpYear)
-		updateClauses = append(updateClauses, fmt.Sprintf("card_exp_year = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.BankAccountLast4 != nil {
-		args = append(args, *paymentMethod.BankAccountLast4)
-		updateClauses = append(updateClauses, fmt.Sprintf("bank_account_last4 = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.BankAccountBankName != nil {
-		args = append(args, *paymentMethod.BankAccountBankName)
-		updateClauses = append(updateClauses, fmt.Sprintf("bank_account_bank_name = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentMethod.CreatedAt != nil {
-		args = append(args, *paymentMethod.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert payment method: %w", err)
 	}
 

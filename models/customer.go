@@ -13,7 +13,6 @@ type Customer struct {
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Phone     string    `json:"phone"`
-	UserID    uint64    `json:"user_id"`
 	Balance   int64     `json:"balance"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -21,10 +20,7 @@ type Customer struct {
 
 type PartialCustomer struct {
 	ID        string
-	UserID    *uint64
 	Email     *string
-	Name      *string
-	Phone     *string
 	Balance   *int64
 	CreatedAt *time.Time
 	UpdatedAt *time.Time
@@ -36,7 +32,6 @@ func NewCustomer() *Customer {
 
 func (c *Customer) ConvertFromSQLCCustomer(sqlcCustomer any) *Customer {
 
-	var userID uint64
 	var balance int64
 	var id, name, email string
 	var createdAt, updatedAt time.Time
@@ -44,13 +39,11 @@ func (c *Customer) ConvertFromSQLCCustomer(sqlcCustomer any) *Customer {
 	switch sp := sqlcCustomer.(type) {
 	case *sqlc.Customer:
 		id = sp.ID
-		userID = uint64(sp.UserID)
 		balance = sp.Balance
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time
 	case *sqlc.GetCustomerRow:
 		id = sp.ID
-		userID = uint64(sp.UserID)
 		balance = sp.Balance
 		name = sp.Name
 		email = sp.Email
@@ -58,10 +51,9 @@ func (c *Customer) ConvertFromSQLCCustomer(sqlcCustomer any) *Customer {
 		updatedAt = sp.UpdatedAt.Time
 	case *sqlc.ListCustomersRow:
 		id = sp.ID
-		userID = uint64(sp.UserID)
 		balance = sp.Balance
 		name = sp.Name
-		email = sp.Email
+		email = sp.UserEmail
 		createdAt = sp.CreatedAt.Time
 		updatedAt = sp.UpdatedAt.Time
 	default:
@@ -69,7 +61,6 @@ func (c *Customer) ConvertFromSQLCCustomer(sqlcCustomer any) *Customer {
 	}
 
 	c.ID = id
-	c.UserID = userID
 	c.Balance = balance
 	c.Name = name
 	c.Email = email

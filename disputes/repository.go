@@ -5,14 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
-	"strings"
-	"time"
 )
 
 type Repository interface {
@@ -44,7 +45,7 @@ func (r *repository) Create(ctx context.Context, dispute *models.Dispute) error 
 		Currency:      sqlc.Currency(dispute.Currency),
 		Status:        sqlc.DisputeStatus(dispute.Status),
 		Reason:        sqlc.DisputeReason(dispute.Reason),
-		EvidenceDueBy: pgtype.Timestamptz{Time: dispute.EvidenceDueBy},
+		EvidenceDueBy: pgtype.Timestamptz{Time: dispute.EvidenceDueBy, Valid: true},
 	}); err != nil {
 		r.logger.Error("Failed to create dispute", zap.Error(err))
 		return fmt.Errorf("failed to create dispute: %w", err)
@@ -76,7 +77,7 @@ func (r *repository) Update(ctx context.Context, dispute *models.Dispute) error 
 		Currency:      sqlc.Currency(dispute.Currency),
 		Status:        sqlc.DisputeStatus(dispute.Status),
 		Reason:        sqlc.DisputeReason(dispute.Reason),
-		EvidenceDueBy: pgtype.Timestamptz{Time: dispute.EvidenceDueBy},
+		EvidenceDueBy: pgtype.Timestamptz{Time: dispute.EvidenceDueBy, Valid: true},
 	})
 
 	if err != nil {
@@ -95,72 +96,34 @@ func (r *repository) Close(ctx context.Context, id string) error {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, dispute *models.PartialDispute) error {
-	query := `
-    INSERT INTO disputes (id, charge_id, amount, status, reason, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+	const query = `
+    INSERT INTO disputes (id, charge_id, amount, status, reason, currency, evidence_due_by, created_at, updated_at)
+    VALUES (@id, @charge_id, @amount, @status, @reason, @currency, @evidence_due_by, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        charge_id = COALESCE(@charge_id, disputes.charge_id),
+        amount = COALESCE(@amount, disputes.amount),
+        status = COALESCE(@status, disputes.status),
+        reason = COALESCE(@reason, disputes.reason),
+        currency = COALESCE(@currency, disputes.currency),
+        evidence_due_by = COALESCE(@evidence_due_by, @evidence_due_by),
+        updated_at = @updated_at
+    WHERE disputes.id = @id
     `
-	args := []interface{}{dispute.ID}
-	updateClauses := []string{}
-	argIndex := 2
 
-	if dispute.ChargeID != nil {
-		args = append(args, *dispute.ChargeID)
-		updateClauses = append(updateClauses, fmt.Sprintf("charge_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":              dispute.ID,
+		"charge_id":       dispute.ChargeID,
+		"amount":          dispute.Amount,
+		"status":          dispute.Status,
+		"reason":          dispute.Reason,
+		"currency":        dispute.Currency,
+		"evidence_due_by": dispute.EvidenceDueBy,
+		"created_at":      dispute.CreatedAt,
+		"updated_at":      now,
 	}
 
-	if dispute.Amount != nil {
-		args = append(args, *dispute.Amount)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if dispute.Currency != nil {
-		args = append(args, *dispute.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if dispute.Status != nil {
-		args = append(args, *dispute.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if dispute.Reason != nil {
-		args = append(args, *dispute.Reason)
-		updateClauses = append(updateClauses, fmt.Sprintf("reason = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if dispute.CreatedAt != nil {
-		args = append(args, *dispute.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert dispute: %w", err)
 	}
 

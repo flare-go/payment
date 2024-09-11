@@ -3,14 +3,14 @@ package config
 import (
 	"context"
 	"fmt"
-	"goflare.io/ember"
-	"goflare.io/ignite"
 	"log"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
+	"goflare.io/ember"
 	emberConfig "goflare.io/ember/config"
+	"goflare.io/ignite"
 	"goflare.io/payment/driver"
 )
 

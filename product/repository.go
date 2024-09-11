@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -238,64 +237,31 @@ func (r *repository) List(ctx context.Context, tx pgx.Tx, limit, offset uint64) 
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, product *models.PartialProduct) error {
-	query := `
+	const query = `
     INSERT INTO products (id, name, description, active, metadata, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    VALUES (@id, @name, @description, @active, @metadata, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        name = COALESCE(@name, products.name),
+        description = COALESCE(@description, products.description),
+        active = COALESCE(@active, products.active),
+        metadata = COALESCE(@metadata, products.metadata),
+        updated_at = @updated_at
+    WHERE products.id = @id
     `
-	args := []interface{}{product.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if product.Name != nil {
-		args = append(args, *product.Name)
-		updateClauses = append(updateClauses, fmt.Sprintf("name = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":          product.ID,
+		"name":        product.Name,
+		"description": product.Description,
+		"active":      product.Active,
+		"metadata":    product.Metadata,
+		"created_at":  now,
+		"updated_at":  now,
 	}
 
-	if product.Description != nil {
-		args = append(args, *product.Description)
-		updateClauses = append(updateClauses, fmt.Sprintf("description = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if product.Active != nil {
-		args = append(args, *product.Active)
-		updateClauses = append(updateClauses, fmt.Sprintf("active = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if product.Metadata != nil {
-		args = append(args, *product.Metadata)
-		updateClauses = append(updateClauses, fmt.Sprintf("metadata = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if product.CreatedAt != nil {
-		args = append(args, *product.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	_, err := tx.Exec(ctx, query, args)
+	if err != nil {
 		return fmt.Errorf("failed to upsert product: %w", err)
 	}
 

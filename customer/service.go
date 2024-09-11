@@ -2,6 +2,7 @@ package customer
 
 import (
 	"context"
+
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 

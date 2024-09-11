@@ -7,39 +7,43 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const upsertCharge = `-- name: UpsertCharge :exec
 INSERT INTO charges (
-    id, customer_id, payment_intent_id, amount, currency, status, paid, refunded,
-    failure_code, failure_message
+    id, customer_id, payment_intent_id, amount, currency, status, paid, refunded, failure_code, failure_message, created_at, updated_at
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
          )
 ON CONFLICT (id) DO UPDATE SET
-                                      id = EXCLUDED.id,
-                                      payment_intent_id = EXCLUDED.payment_intent_id,
-                                      amount = EXCLUDED.amount,
-                                      currency = EXCLUDED.currency,
-                                      status = EXCLUDED.status,
-                                      paid = EXCLUDED.paid,
-                                      refunded = EXCLUDED.refunded,
-                                      failure_code = EXCLUDED.failure_code,
-                                      failure_message = EXCLUDED.failure_message,
-                                      updated_at = NOW()
+                               customer_id = COALESCE($2, charges.customer_id),
+                               payment_intent_id = COALESCE($3, charges.payment_intent_id),
+                               amount = COALESCE($4, charges.amount),
+                               currency = COALESCE($5, charges.currency),
+                               status = COALESCE($6, charges.status),
+                               paid = COALESCE($7, charges.paid),
+                               refunded = COALESCE($8, charges.refunded),
+                               failure_code = COALESCE($9, charges.failure_code),
+                               failure_message = COALESCE($10, charges.failure_message),
+                               created_at = COALESCE($11, charges.created_at),
+                               updated_at = $12
 `
 
 type UpsertChargeParams struct {
-	ID              string       `json:"id"`
-	CustomerID      *string      `json:"customerId"`
-	PaymentIntentID *string      `json:"paymentIntentId"`
-	Amount          float64      `json:"amount"`
-	Currency        Currency     `json:"currency"`
-	Status          ChargeStatus `json:"status"`
-	Paid            bool         `json:"paid"`
-	Refunded        bool         `json:"refunded"`
-	FailureCode     *string      `json:"failureCode"`
-	FailureMessage  *string      `json:"failureMessage"`
+	ID              string             `json:"id"`
+	CustomerID      *string            `json:"customerId"`
+	PaymentIntentID *string            `json:"paymentIntentId"`
+	Amount          float64            `json:"amount"`
+	Currency        Currency           `json:"currency"`
+	Status          ChargeStatus       `json:"status"`
+	Paid            bool               `json:"paid"`
+	Refunded        bool               `json:"refunded"`
+	FailureCode     *string            `json:"failureCode"`
+	FailureMessage  *string            `json:"failureMessage"`
+	CreatedAt       pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
 }
 
 func (q *Queries) UpsertCharge(ctx context.Context, arg UpsertChargeParams) error {
@@ -54,6 +58,8 @@ func (q *Queries) UpsertCharge(ctx context.Context, arg UpsertChargeParams) erro
 		arg.Refunded,
 		arg.FailureCode,
 		arg.FailureMessage,
+		arg.CreatedAt,
+		arg.UpdatedAt,
 	)
 	return err
 }

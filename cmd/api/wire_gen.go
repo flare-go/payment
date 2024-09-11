@@ -35,7 +35,7 @@ import (
 
 // Injectors from wire.go:
 
-func InitializeAuthService() (*server.Server, error) {
+func InitializePaymentService() (*server.Server, error) {
 	configConfig, err := config.ProvideApplicationConfig()
 	if err != nil {
 		return nil, err
@@ -121,6 +121,7 @@ func InitializeAuthService() (*server.Server, error) {
 	productHandler := handlers.NewProductHandler(paymentPayment, logger)
 	priceHandler := handlers.NewPriceHandler(paymentPayment, logger)
 	paymentIntentHandler := handlers.NewPaymentIntentHandler(paymentPayment)
-	serverServer := server.NewServer(customerHandler, productHandler, priceHandler, paymentIntentHandler)
+	webhookHandler := handlers.NewWebhookHandler(paymentPayment, logger)
+	serverServer := server.NewServer(customerHandler, productHandler, priceHandler, paymentIntentHandler, webhookHandler)
 	return serverServer, nil
 }

@@ -1,11 +1,13 @@
 package handlers
 
 import (
-	"github.com/labstack/echo/v4"
-	"go.uber.org/zap"
-	"goflare.io/payment"
 	"io"
 	"net/http"
+
+	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
+
+	"goflare.io/payment"
 )
 
 type WebhookHandler interface {
@@ -26,6 +28,7 @@ func NewWebhookHandler(payment payment.Payment, logger *zap.Logger) WebhookHandl
 
 // HandleWebhook processes incoming Stripe webhook events
 func (wh *webhookHandler) HandleWebhook(c echo.Context) error {
+	wh.Logger.Info("Handling webhook")
 	payload, err := io.ReadAll(c.Request().Body)
 	if err != nil {
 		wh.Logger.Error("Failed to read webhook payload", zap.Error(err))

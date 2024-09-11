@@ -1,7 +1,7 @@
 -- name: CreateCustomer :one
 INSERT INTO customers (
     id,
-    user_id,
+    user_email,
     balance
 ) VALUES (
              $1, $2, $3
@@ -9,10 +9,10 @@ INSERT INTO customers (
 RETURNING id, created_at, updated_at;
 
 -- name: GetCustomer :one
-SELECT c.id, c.user_id, c.balance, c.created_at, c.updated_at,
+SELECT c.id, c.balance, c.created_at, c.updated_at,
        u.email, u.username as name
 FROM customers c
-         JOIN users u ON c.user_id = u.id
+         JOIN users u ON c.user_email = u.email
 WHERE c.id = $1;
 
 -- name: UpdateCustomer :exec
@@ -25,10 +25,10 @@ WHERE id = $1;
 DELETE FROM customers WHERE id = $1;
 
 -- name: ListCustomers :many
-SELECT c.id, c.user_id, c.balance, c.created_at, c.updated_at,
-       u.email, u.username as name
+SELECT c.id, c.user_email, c.balance, c.created_at, c.updated_at,
+    u.username as name
 FROM customers c
-         JOIN users u ON c.user_id = u.id
+         JOIN users u ON c.user_email = u.email
 ORDER BY c.created_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -39,9 +39,9 @@ SET balance = balance + $2,
 WHERE id = $1;
 
 -- name: UpsertCustomer :exec
-INSERT INTO customers (id, user_id, balance, updated_at)
-VALUES ($1, sqlc.narg('user_id'), sqlc.narg('balance'), $3)
+INSERT INTO customers (id, user_email, balance, updated_at)
+VALUES ($1, sqlc.narg('user_email'), sqlc.narg('balance'), $3)
 ON CONFLICT (id) DO UPDATE SET
-                               user_id = COALESCE(sqlc.narg('user_id'), customers.user_id),
+                               user_email = COALESCE(sqlc.narg('user_email'), customers.user_email),
                                balance = COALESCE(sqlc.narg('balance'), customers.balance),
                                updated_at = $3;

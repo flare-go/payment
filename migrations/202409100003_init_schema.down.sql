@@ -1,4 +1,3 @@
-DROP INDEX IF EXISTS idx_customers_user_id;
 DROP INDEX IF EXISTS idx_customers_id;
 DROP INDEX IF EXISTS idx_products_id;
 DROP INDEX IF EXISTS idx_prices_id;

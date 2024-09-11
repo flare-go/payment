@@ -3,14 +3,13 @@ package promotion_code
 import (
 	"context"
 	"fmt"
-	"goflare.io/payment/sqlc"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
+	"goflare.io/payment/sqlc"
 )
 
 type Repository interface {
@@ -27,88 +26,36 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, promotionCode *models.PartialPromotionCode) error {
-	query := `
+	const query = `
     INSERT INTO promotion_codes (id, code, coupon_id, customer_id, active, max_redemptions, times_redeemed, expires_at, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES (@id, @code, @coupon_id, @customer_id, @active, @max_redemptions, @times_redeemed, @expires_at, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        code = COALESCE(@code, promotion_codes.code),
+        coupon_id = COALESCE(@coupon_id, promotion_codes.coupon_id),
+        customer_id = COALESCE(@customer_id, promotion_codes.customer_id),
+        active = COALESCE(@active, promotion_codes.active),
+        max_redemptions = COALESCE(@max_redemptions, promotion_codes.max_redemptions),
+        times_redeemed = COALESCE(@times_redeemed, promotion_codes.times_redeemed),
+        expires_at = COALESCE(@expires_at, promotion_codes.expires_at),
+        updated_at = @updated_at
+    WHERE promotion_codes.id = @id
     `
-	args := []interface{}{promotionCode.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if promotionCode.Code != nil {
-		args = append(args, *promotionCode.Code)
-		updateClauses = append(updateClauses, fmt.Sprintf("code = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":              promotionCode.ID,
+		"code":            promotionCode.Code,
+		"coupon_id":       promotionCode.CouponID,
+		"customer_id":     promotionCode.CustomerID,
+		"active":          promotionCode.Active,
+		"max_redemptions": promotionCode.MaxRedemptions,
+		"times_redeemed":  promotionCode.TimesRedeemed,
+		"expires_at":      promotionCode.ExpiresAt,
+		"created_at":      promotionCode.CreatedAt,
+		"updated_at":      now,
 	}
 
-	if promotionCode.CouponID != nil {
-		args = append(args, *promotionCode.CouponID)
-		updateClauses = append(updateClauses, fmt.Sprintf("coupon_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if promotionCode.CustomerID != nil {
-		args = append(args, *promotionCode.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if promotionCode.Active != nil {
-		args = append(args, *promotionCode.Active)
-		updateClauses = append(updateClauses, fmt.Sprintf("active = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if promotionCode.MaxRedemptions != nil {
-		args = append(args, *promotionCode.MaxRedemptions)
-		updateClauses = append(updateClauses, fmt.Sprintf("max_redemptions = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if promotionCode.TimesRedeemed != nil {
-		args = append(args, *promotionCode.TimesRedeemed)
-		updateClauses = append(updateClauses, fmt.Sprintf("times_redeemed = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if promotionCode.ExpiresAt != nil {
-		args = append(args, *promotionCode.ExpiresAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("expires_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if promotionCode.CreatedAt != nil {
-		args = append(args, *promotionCode.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert promotion code: %w", err)
 	}
 

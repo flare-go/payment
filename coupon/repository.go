@@ -3,7 +3,6 @@ package coupon
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,112 +26,42 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, coupon *models.PartialCoupon) error {
-	query := `
-   INSERT INTO coupons (id, name, amount_off, percent_off, currency, duration, duration_in_months, max_redemptions, times_redeemed, valid, created_at, updated_at, redeem_by)
-   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-   ON CONFLICT (id) DO UPDATE SET
-   `
-	args := []interface{}{coupon.ID}
-	var updateClauses []string
-	argIndex := 2
+	const query = `
+    INSERT INTO coupons (id, name, amount_off, percent_off, currency, duration, duration_in_months, max_redemptions, times_redeemed, valid, created_at, updated_at, redeem_by)
+    VALUES (@id, @name, @amount_off, @percent_off, @currency, @duration, @duration_in_months, @max_redemptions, @times_redeemed, @valid, COALESCE(@created_at, NOW()), @updated_at, @redeem_by)
+    ON CONFLICT (id) DO UPDATE SET
+        name = COALESCE(@name, coupons.name),
+        amount_off = COALESCE(@amount_off, coupons.amount_off),
+        percent_off = COALESCE(@percent_off, coupons.percent_off),
+        currency = COALESCE(@currency, coupons.currency),
+        duration = COALESCE(@duration, coupons.duration),
+        duration_in_months = COALESCE(@duration_in_months, coupons.duration_in_months),
+        max_redemptions = COALESCE(@max_redemptions, coupons.max_redemptions),
+        times_redeemed = COALESCE(@times_redeemed, coupons.times_redeemed),
+        valid = COALESCE(@valid, coupons.valid),
+        updated_at = @updated_at,
+        redeem_by = COALESCE(@redeem_by, coupons.redeem_by)
+    WHERE coupons.id = @id
+    `
 
-	if coupon.Name != nil {
-		args = append(args, *coupon.Name)
-		updateClauses = append(updateClauses, fmt.Sprintf("name = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":                 coupon.ID,
+		"name":               coupon.Name,
+		"amount_off":         coupon.AmountOff,
+		"percent_off":        coupon.PercentOff,
+		"currency":           coupon.Currency,
+		"duration":           coupon.Duration,
+		"duration_in_months": coupon.DurationInMonths,
+		"max_redemptions":    coupon.MaxRedemptions,
+		"times_redeemed":     coupon.TimesRedeemed,
+		"valid":              coupon.Valid,
+		"created_at":         coupon.CreatedAt,
+		"updated_at":         now,
+		"redeem_by":          coupon.RedeemBy,
 	}
 
-	if coupon.AmountOff != nil {
-		args = append(args, *coupon.AmountOff)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount_off = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.PercentOff != nil {
-		args = append(args, *coupon.PercentOff)
-		updateClauses = append(updateClauses, fmt.Sprintf("percent_off = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.Currency != nil {
-		args = append(args, *coupon.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.Duration != nil {
-		args = append(args, *coupon.Duration)
-		updateClauses = append(updateClauses, fmt.Sprintf("duration = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.DurationInMonths != nil {
-		args = append(args, *coupon.DurationInMonths)
-		updateClauses = append(updateClauses, fmt.Sprintf("duration_in_months = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.MaxRedemptions != nil {
-		args = append(args, *coupon.MaxRedemptions)
-		updateClauses = append(updateClauses, fmt.Sprintf("max_redemptions = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.TimesRedeemed != nil {
-		args = append(args, *coupon.TimesRedeemed)
-		updateClauses = append(updateClauses, fmt.Sprintf("times_redeemed = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.Valid != nil {
-		args = append(args, *coupon.Valid)
-		updateClauses = append(updateClauses, fmt.Sprintf("valid = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if coupon.CreatedAt != nil {
-		args = append(args, *coupon.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-	argIndex++
-
-	if coupon.RedeemBy != nil {
-		args = append(args, *coupon.RedeemBy)
-		updateClauses = append(updateClauses, fmt.Sprintf("redeem_by = $%d", argIndex))
-	} else {
-		args = append(args, nil)
-	}
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert coupon: %w", err)
 	}
 

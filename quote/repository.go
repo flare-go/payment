@@ -3,14 +3,13 @@ package quote
 import (
 	"context"
 	"fmt"
-	"goflare.io/payment/sqlc"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
+	"goflare.io/payment/sqlc"
 )
 
 type Repository interface {
@@ -27,88 +26,36 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, quote *models.PartialQuote) error {
-	query := `
+	const query = `
     INSERT INTO quotes (id, customer_id, status, amount_total, currency, valid_until, accepted_at, canceled_at, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES (@id, @customer_id, @status, @amount_total, @currency, @valid_until, @accepted_at, @canceled_at, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, quotes.customer_id),
+        status = COALESCE(@status, quotes.status),
+        amount_total = COALESCE(@amount_total, quotes.amount_total),
+        currency = COALESCE(@currency, quotes.currency),
+        valid_until = COALESCE(@valid_until, quotes.valid_until),
+        accepted_at = COALESCE(@accepted_at, quotes.accepted_at),
+        canceled_at = COALESCE(@canceled_at, quotes.canceled_at),
+        updated_at = @updated_at
+    WHERE quotes.id = @id
     `
-	args := []interface{}{quote.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if quote.CustomerID != nil {
-		args = append(args, *quote.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":           quote.ID,
+		"customer_id":  quote.CustomerID,
+		"status":       quote.Status,
+		"amount_total": quote.AmountTotal,
+		"currency":     quote.Currency,
+		"valid_until":  quote.ValidUntil,
+		"accepted_at":  quote.AcceptedAt,
+		"canceled_at":  quote.CanceledAt,
+		"created_at":   quote.CreatedAt,
+		"updated_at":   now,
 	}
 
-	if quote.Status != nil {
-		args = append(args, *quote.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if quote.AmountTotal != nil {
-		args = append(args, *quote.AmountTotal)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount_total = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if quote.Currency != nil {
-		args = append(args, *quote.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if quote.ValidUntil != nil {
-		args = append(args, *quote.ValidUntil)
-		updateClauses = append(updateClauses, fmt.Sprintf("valid_until = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if quote.AcceptedAt != nil {
-		args = append(args, *quote.AcceptedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("accepted_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if quote.CanceledAt != nil {
-		args = append(args, *quote.CanceledAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("canceled_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if quote.CreatedAt != nil {
-		args = append(args, *quote.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert quote: %w", err)
 	}
 

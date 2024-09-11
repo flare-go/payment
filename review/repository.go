@@ -1,15 +1,15 @@
-// repository/review/repository.go
 package review
 
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
-	"strings"
-	"time"
 )
 
 type Repository interface {
@@ -26,80 +26,34 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, review *models.PartialReview) error {
-	query := `
-    INSERT INTO reviews (id, payment_intent_id, reason, status, opened_at, closed_at, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	const query = `
+    INSERT INTO reviews (id, payment_intent_id, reason, closed_reason, status, opened_at, closed_at, created_at, updated_at)
+    VALUES (@id, @payment_intent_id, @reason, @closed_reason, @status, @opened_at, @closed_at, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        payment_intent_id = COALESCE(@payment_intent_id, reviews.payment_intent_id),
+        reason = COALESCE(@reason, reviews.reason),
+        closed_reason = COALESCE(@closed_reason, reviews.closed_reason),
+        status = COALESCE(@status, reviews.status),
+        opened_at = COALESCE(@opened_at, reviews.opened_at),
+        closed_at = COALESCE(@closed_at, reviews.closed_at),
+        updated_at = @updated_at
+    WHERE reviews.id = @id
     `
-	args := []interface{}{review.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if review.PaymentIntentID != nil {
-		args = append(args, *review.PaymentIntentID)
-		updateClauses = append(updateClauses, fmt.Sprintf("payment_intent_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":                review.ID,
+		"payment_intent_id": review.PaymentIntentID,
+		"reason":            review.Reason,
+		"closed_reason":     review.ClosedReason,
+		"status":            review.Status,
+		"opened_at":         review.OpenedAt,
+		"closed_at":         review.ClosedAt,
+		"created_at":        review.CreatedAt,
+		"updated_at":        now,
 	}
 
-	if review.Reason != nil {
-		args = append(args, *review.Reason)
-		updateClauses = append(updateClauses, fmt.Sprintf("reason = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if review.ClosedReason != nil {
-		args = append(args, *review.ClosedReason)
-		updateClauses = append(updateClauses, fmt.Sprintf("closed_reason = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if review.Status != nil {
-		args = append(args, *review.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if review.OpenedAt != nil {
-		args = append(args, *review.OpenedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("opened_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if review.ClosedAt != nil {
-		args = append(args, *review.ClosedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("closed_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if review.CreatedAt != nil {
-		args = append(args, *review.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert review: %w", err)
 	}
 

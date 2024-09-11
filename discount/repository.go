@@ -5,12 +5,13 @@ package discount
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
-	"strings"
-	"time"
 )
 
 type Repository interface {
@@ -27,65 +28,31 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, discount *models.PartialDiscount) error {
-	query := `
+	const query = `
     INSERT INTO discounts (id, customer_id, coupon_id, start, "end", created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    VALUES (@id, @customer_id, @coupon_id, @start, @"end", COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, discounts.customer_id),
+        coupon_id = COALESCE(@coupon_id, discounts.coupon_id),
+        start = COALESCE(@start, discounts.start),
+        "end" = COALESCE(@"end", discounts."end"),
+        updated_at = @updated_at
+    WHERE discounts.id = @id
     `
-	args := []interface{}{discount.ID}
-	updateClauses := []string{}
-	argIndex := 2
 
-	if discount.CustomerID != nil {
-		args = append(args, *discount.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":          discount.ID,
+		"customer_id": discount.CustomerID,
+		"coupon_id":   discount.CouponID,
+		"start":       discount.Start,
+		"end":         discount.End,
+		"created_at":  discount.CreatedAt,
+		"updated_at":  now,
 	}
 
-	if discount.CouponID != nil {
-		args = append(args, *discount.CouponID)
-		updateClauses = append(updateClauses, fmt.Sprintf("coupon_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if discount.Start != nil {
-		args = append(args, *discount.Start)
-		updateClauses = append(updateClauses, fmt.Sprintf("start = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if discount.End != nil {
-		args = append(args, *discount.End)
-		updateClauses = append(updateClauses, fmt.Sprintf("\"end\" = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if discount.CreatedAt != nil {
-		args = append(args, *discount.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to upsert dispute: %w", err)
+	if _, err := tx.Exec(ctx, query, args); err != nil {
+		return fmt.Errorf("failed to upsert discount: %w", err)
 	}
 
 	return nil

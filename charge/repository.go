@@ -3,7 +3,6 @@ package charge
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,104 +24,40 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, charge *models.PartialCharge) error {
-	query := `
+	const query = `
     INSERT INTO charges (id, customer_id, payment_intent_id, amount, currency, status, paid, refunded, failure_code, failure_message, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES (@id, @customer_id, @payment_intent_id, @amount, @currency, @status, @paid, @refunded, @failure_code, @failure_message, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, charges.customer_id),
+        payment_intent_id = COALESCE(@payment_intent_id, charges.payment_intent_id),
+        amount = COALESCE(@amount, charges.amount),
+        currency = COALESCE(@currency, charges.currency),
+        status = COALESCE(@status, charges.status),
+        paid = COALESCE(@paid, charges.paid),
+        refunded = COALESCE(@refunded, charges.refunded),
+        failure_code = COALESCE(@failure_code, charges.failure_code),
+        failure_message = COALESCE(@failure_message, charges.failure_message),
+        updated_at = @updated_at
+    WHERE charges.id = @id
     `
-	args := []interface{}{charge.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if charge.CustomerID != nil {
-		args = append(args, *charge.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":                charge.ID,
+		"customer_id":       charge.CustomerID,
+		"payment_intent_id": charge.PaymentIntentID,
+		"amount":            charge.Amount,
+		"currency":          charge.Currency,
+		"status":            charge.Status,
+		"paid":              charge.Paid,
+		"refunded":          charge.Refunded,
+		"failure_code":      charge.FailureCode,
+		"failure_message":   charge.FailureMessage,
+		"created_at":        charge.CreatedAt,
+		"updated_at":        now,
 	}
 
-	if charge.PaymentIntentID != nil {
-		args = append(args, *charge.PaymentIntentID)
-		updateClauses = append(updateClauses, fmt.Sprintf("payment_intent_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.Amount != nil {
-		args = append(args, *charge.Amount)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.Currency != nil {
-		args = append(args, *charge.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.Status != nil {
-		args = append(args, *charge.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.Paid != nil {
-		args = append(args, *charge.Paid)
-		updateClauses = append(updateClauses, fmt.Sprintf("paid = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.Refunded != nil {
-		args = append(args, *charge.Refunded)
-		updateClauses = append(updateClauses, fmt.Sprintf("refunded = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.FailureCode != nil {
-		args = append(args, *charge.FailureCode)
-		updateClauses = append(updateClauses, fmt.Sprintf("failure_code = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.FailureMessage != nil {
-		args = append(args, *charge.FailureMessage)
-		updateClauses = append(updateClauses, fmt.Sprintf("failure_message = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if charge.CreatedAt != nil {
-		args = append(args, *charge.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert charge: %w", err)
 	}
 

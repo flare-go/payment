@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/stripe/stripe-go/v79"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stripe/stripe-go/v79"
 	"go.uber.org/zap"
 
 	"goflare.io/payment/driver"

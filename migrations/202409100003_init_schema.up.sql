@@ -1,6 +1,6 @@
 CREATE TABLE customers (
                            id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
-                           user_id INTEGER NOT NULL REFERENCES users(id) UNIQUE,
+                           user_email VARCHAR(255) NOT NULL REFERENCES users(email) UNIQUE,
                            balance BIGINT NOT NULL DEFAULT 0,
                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -96,12 +96,12 @@ CREATE TABLE payment_methods (
 
 CREATE TABLE payment_intents (
                                  id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
-                                 customer_id VARCHAR(255) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                                 customer_id VARCHAR(255),
                                  amount DECIMAL(10, 2) NOT NULL CHECK (amount > 0),
                                  currency currency NOT NULL,
                                  capture_method payment_intent_capture_method NOT NULL,
                                  status payment_intent_status NOT NULL,
-                                 payment_method_id VARCHAR(255) REFERENCES payment_methods(id) ON DELETE SET NULL,
+                                 payment_method_id VARCHAR(255),
                                  setup_future_usage payment_intent_setup_future_usage,
                                  client_secret VARCHAR(255) NOT NULL,
                                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -111,7 +111,7 @@ CREATE TABLE payment_intents (
 CREATE TABLE charges (
                          id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                          customer_id VARCHAR(255) REFERENCES customers(id),
-                         payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
+                         payment_intent_id VARCHAR(255),
                          amount BIGINT NOT NULL,
                          currency currency NOT NULL,
                          status charge_status NOT NULL,
@@ -197,9 +197,9 @@ CREATE TABLE promotion_codes (
 
 -- 結帳會話表
 CREATE TABLE checkout_sessions (
-                                   id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
+                                   id VARCHAR(255) PRIMARY KEY,
                                    customer_id VARCHAR(255) REFERENCES customers(id),
-                                   payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
+                                   payment_intent_id VARCHAR(255),
                                    status checkout_session_status NOT NULL,
                                    mode checkout_session_mode NOT NULL,
                                    success_url TEXT NOT NULL,
@@ -253,7 +253,7 @@ CREATE TABLE reviews (
                          id VARCHAR(255) PRIMARY KEY CHECK (id ~ '^[a-z]+_[a-zA-Z0-9]+$'),
                          payment_intent_id VARCHAR(255) REFERENCES payment_intents(id),
                          reason review_reason NOT NULL,
-                         close_reason review_closed_reason NOT NULL,
+                         closed_reason review_closed_reason NOT NULL,
                          status VARCHAR(50) NOT NULL,
                          opened_at TIMESTAMP WITH TIME ZONE NOT NULL,
                          closed_at TIMESTAMP WITH TIME ZONE,
@@ -263,7 +263,6 @@ CREATE TABLE reviews (
 
 
 -- 創建索引
-CREATE INDEX idx_customers_user_id ON customers(user_id);
 CREATE INDEX idx_customers_id ON customers(id);
 CREATE INDEX idx_products_id ON products(id);
 CREATE INDEX idx_prices_id ON prices(id);

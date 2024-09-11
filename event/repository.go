@@ -2,11 +2,12 @@ package event
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5/pgtype"
+	"time"
+
 	"github.com/stripe/stripe-go/v79"
 	"go.uber.org/zap"
 
-	"goflare.io/ember"
-	"goflare.io/ignite"
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
 	"goflare.io/payment/sqlc"
@@ -25,7 +26,7 @@ type repository struct {
 	logger *zap.Logger
 }
 
-func NewRepository(conn driver.PostgresPool, logger *zap.Logger, cache *ember.MultiCache, poolManager ignite.Manager) (Repository, error) {
+func NewRepository(conn driver.PostgresPool, logger *zap.Logger) (Repository, error) {
 	return &repository{
 		conn:   conn,
 		logger: logger,
@@ -37,6 +38,8 @@ func (r *repository) Create(ctx context.Context, event *models.Event) error {
 		ID:        event.ID,
 		Type:      sqlc.EventType(event.Type),
 		Processed: event.Processed,
+		CreatedAt: pgtype.Timestamptz{Time: event.CreatedAt, Valid: true},
+		UpdatedAt: pgtype.Timestamptz{Time: event.UpdatedAt, Valid: true},
 	})
 }
 
@@ -54,6 +57,7 @@ func (r *repository) GetByID(ctx context.Context, id string) (*models.Event, err
 
 func (r *repository) MarkAsProcessed(ctx context.Context, id string) error {
 	return sqlc.New(r.conn).MarkEventAsProcessed(ctx, sqlc.MarkEventAsProcessedParams{
-		ID: id,
+		ID:        id,
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 }

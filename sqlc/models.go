@@ -2116,7 +2116,7 @@ type Coupon struct {
 
 type Customer struct {
 	ID        string             `json:"id"`
-	UserID    int32              `json:"userId"`
+	UserEmail string             `json:"userEmail"`
 	Balance   int64              `json:"balance"`
 	CreatedAt pgtype.Timestamptz `json:"createdAt"`
 	UpdatedAt pgtype.Timestamptz `json:"updatedAt"`

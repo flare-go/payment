@@ -3,11 +3,11 @@ package customer
 import (
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"go.uber.org/zap"
 	"reflect"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 
 	"goflare.io/ember"
 	"goflare.io/ignite"
@@ -82,9 +82,9 @@ func (r *repository) getFromPool(ctx context.Context) (*models.Customer, func(),
 func (r *repository) Create(ctx context.Context, tx pgx.Tx, customer *models.Customer) error {
 
 	sqlcCustomer, err := sqlc.New(r.conn).WithTx(tx).CreateCustomer(ctx, sqlc.CreateCustomerParams{
-		ID:      customer.ID,
-		UserID:  int32(customer.UserID),
-		Balance: customer.Balance,
+		ID:        customer.ID,
+		UserEmail: customer.Email,
+		Balance:   customer.Balance,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create customer: %w", err)
@@ -228,58 +228,32 @@ func (r *repository) UpdateBalance(ctx context.Context, tx pgx.Tx, id string, ba
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, customer *models.PartialCustomer) error {
+	const query = `
+    INSERT INTO customers (id, user_email, balance, created_at, updated_at)
+    VALUES (@id, @user_email, @balance, COALESCE(@created_at, NOW()), @updated_at)
+    ON CONFLICT (id) DO UPDATE SET
+        balance = COALESCE(@balance, customers.balance),
+        updated_at = @updated_at
+    WHERE customers.id = @id
+    `
 
-	var userID *int32
-	if customer.UserID != nil {
-		u := int32(*customer.UserID)
-		userID = &u
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":         customer.ID,
+		"balance":    customer.Balance,
+		"created_at": customer.CreatedAt,
+		"updated_at": now,
 	}
-	if err := sqlc.New(r.conn).WithTx(tx).UpsertCustomer(ctx, sqlc.UpsertCustomerParams{
-		ID:        customer.ID,
-		UserID:    userID,
-		Balance:   customer.Balance,
-		UpdatedAt: pgtype.Timestamptz{Time: time.Now()},
-	}); err != nil {
-		return err
+
+	if _, err := tx.Exec(ctx, query, args); err != nil {
+		return fmt.Errorf("failed to upsert customer: %w", err)
+	}
+
+	// 更新或清除緩存
+	cacheKey := fmt.Sprintf("customer:%s", customer.ID)
+	if err := r.cache.Delete(ctx, cacheKey); err != nil {
+		r.logger.Warn("Failed to delete customer from cache", zap.Error(err), zap.String("id", customer.ID))
 	}
 
 	return nil
 }
-
-//func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, customer *models.PartialCustomer) error {
-//	query := `
-//    INSERT INTO customers (id, balance, updated_at)
-//    VALUES ($1, $2, $3)
-//    ON CONFLICT (id) DO UPDATE SET
-//    `
-//
-//	args := []any{customer.ID}
-//	var updateClauses []string
-//	argIndex := 2
-//
-//	if customer.Balance != nil {
-//		args = append(args, *customer.Balance)
-//		updateClauses = append(updateClauses, fmt.Sprintf("balance = $%d", argIndex))
-//		argIndex++
-//	} else {
-//		args = append(args, nil)
-//	}
-//
-//	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-//	args = append(args, time.Now())
-//
-//	query += strings.Join(updateClauses, ", ")
-//	query += " WHERE id = $1"
-//
-//	if _, err := tx.Exec(ctx, query, args...); err != nil {
-//		return fmt.Errorf("failed to upsert customer: %w", err)
-//	}
-//
-//	// 更新或清除緩存
-//	cacheKey := fmt.Sprintf("customer:%s", customer.ID)
-//	if err := r.cache.Delete(ctx, cacheKey); err != nil {
-//		r.logger.Warn("Failed to delete customer from cache", zap.Error(err), zap.String("id", customer.ID))
-//	}
-//
-//	return nil
-//}

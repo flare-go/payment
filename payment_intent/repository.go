@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -246,88 +245,38 @@ func (r *repository) ListByCustomer(ctx context.Context, tx pgx.Tx, customerID s
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, paymentIntent *models.PartialPaymentIntent) error {
-	query := `
-    INSERT INTO payment_intents (id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	const query = `
+    INSERT INTO payment_intents (id, customer_id, amount, currency, status, payment_method_id, setup_future_usage, client_secret, capture_method, created_at, updated_at)
+    VALUES (@id, @customer_id, @amount, @currency, @status, @payment_method_id, @setup_future_usage, @client_secret,@capture_method, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, payment_intents.customer_id),
+        amount = COALESCE(@amount, payment_intents.amount),
+        currency = COALESCE(@currency, payment_intents.currency),
+        status = COALESCE(@status, payment_intents.status),
+        payment_method_id = COALESCE(@payment_method_id, payment_intents.payment_method_id),
+        setup_future_usage = COALESCE(@setup_future_usage, payment_intents.setup_future_usage),
+        client_secret = COALESCE(@client_secret, payment_intents.client_secret),
+        capture_method = COALESCE(@capture_method, payment_intents.capture_method),
+        updated_at = @updated_at
+    WHERE payment_intents.id = @id
     `
-	args := []interface{}{paymentIntent.ID}
-	updateClauses := []string{}
-	argIndex := 2
 
-	if paymentIntent.CustomerID != nil {
-		args = append(args, *paymentIntent.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":                 paymentIntent.ID,
+		"customer_id":        paymentIntent.CustomerID,
+		"amount":             paymentIntent.Amount,
+		"currency":           paymentIntent.Currency,
+		"status":             paymentIntent.Status,
+		"payment_method_id":  paymentIntent.PaymentMethodID,
+		"setup_future_usage": paymentIntent.SetupFutureUsage,
+		"client_secret":      paymentIntent.ClientSecret,
+		"capture_method":     paymentIntent.CaptureMethod,
+		"created_at":         paymentIntent.CreatedAt,
+		"updated_at":         now,
 	}
 
-	if paymentIntent.Amount != nil {
-		args = append(args, *paymentIntent.Amount)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentIntent.Currency != nil {
-		args = append(args, *paymentIntent.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentIntent.Status != nil {
-		args = append(args, *paymentIntent.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentIntent.PaymentMethodID != nil {
-		args = append(args, *paymentIntent.PaymentMethodID)
-		updateClauses = append(updateClauses, fmt.Sprintf("payment_method_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentIntent.SetupFutureUsage != nil {
-		args = append(args, *paymentIntent.SetupFutureUsage)
-		updateClauses = append(updateClauses, fmt.Sprintf("setup_future_usage = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentIntent.ClientSecret != nil {
-		args = append(args, *paymentIntent.ClientSecret)
-		updateClauses = append(updateClauses, fmt.Sprintf("client_secret = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if paymentIntent.CreatedAt != nil {
-		args = append(args, *paymentIntent.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert payment intent: %w", err)
 	}
 

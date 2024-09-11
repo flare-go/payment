@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -278,96 +277,46 @@ func (r *repository) ListActive(ctx context.Context, tx pgx.Tx, productID string
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, price *models.PartialPrice) error {
-	query := `
+	const query = `
     INSERT INTO prices (id, product_id, active, currency, unit_amount, type, recurring_interval, recurring_interval_count, trial_period_days, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES (@id, @product_id, @active, @currency, @unit_amount, @type, @recurring_interval, COALESCE(@recurring_interval_count, 1), @trial_period_days, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        product_id = COALESCE(@product_id, prices.product_id),
+        active = COALESCE(@active, prices.active),
+        currency = COALESCE(@currency, prices.currency),
+        unit_amount = COALESCE(@unit_amount, prices.unit_amount),
+        type = COALESCE(@type, prices.type),
+        recurring_interval = COALESCE(@recurring_interval, prices.recurring_interval),
+        recurring_interval_count = COALESCE(@recurring_interval_count, prices.recurring_interval_count, 1),
+        trial_period_days = COALESCE(@trial_period_days, prices.trial_period_days),
+        updated_at = @updated_at
+    WHERE prices.id = @id
     `
-	args := []interface{}{price.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if price.ProductID != nil {
-		args = append(args, *price.ProductID)
-		updateClauses = append(updateClauses, fmt.Sprintf("product_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if price.Active != nil {
-		args = append(args, *price.Active)
-		updateClauses = append(updateClauses, fmt.Sprintf("active = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if price.Currency != nil {
-		args = append(args, *price.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if price.UnitAmount != nil {
-		args = append(args, *price.UnitAmount)
-		updateClauses = append(updateClauses, fmt.Sprintf("unit_amount = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if price.Type != nil {
-		args = append(args, *price.Type)
-		updateClauses = append(updateClauses, fmt.Sprintf("type = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if price.RecurringInterval != nil {
-		args = append(args, *price.RecurringInterval)
-		updateClauses = append(updateClauses, fmt.Sprintf("recurring_interval = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
+	now := time.Now()
+	ric := 1
+	var tpd int32
 	if price.RecurringIntervalCount != nil {
-		args = append(args, *price.RecurringIntervalCount)
-		updateClauses = append(updateClauses, fmt.Sprintf("recurring_interval_count = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+		ric = int(*price.RecurringIntervalCount)
 	}
-
 	if price.TrialPeriodDays != nil {
-		args = append(args, *price.TrialPeriodDays)
-		updateClauses = append(updateClauses, fmt.Sprintf("trial_period_days = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+		tpd = *price.TrialPeriodDays
+	}
+	args := pgx.NamedArgs{
+		"id":                       price.ID,
+		"product_id":               price.ProductID,
+		"active":                   price.Active,
+		"currency":                 price.Currency,
+		"unit_amount":              price.UnitAmount,
+		"type":                     price.Type,
+		"recurring_interval":       price.RecurringInterval,
+		"recurring_interval_count": ric,
+		"trial_period_days":        tpd,
+		"created_at":               now,
+		"updated_at":               now,
 	}
 
-	if price.CreatedAt != nil {
-		args = append(args, *price.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert price: %w", err)
 	}
 

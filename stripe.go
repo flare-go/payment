@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"golang.org/x/sync/errgroup"
-	"strconv"
 	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/client"
 	"github.com/stripe/stripe-go/v79/webhook"
+	"go.uber.org/zap"
 
 	"goflare.io/payment/charge"
 	"goflare.io/payment/checkout_session"
@@ -122,6 +120,15 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 		var handleErr error
 		start := time.Now()
 
+		eventModel := &models.Event{
+			ID:        event.ID,
+			Type:      event.Type,
+			Processed: false,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		handleErr = sp.event.Create(ctx, eventModel)
+
 		switch event.Type {
 		// 客戶相關事件
 		case "customer.created", "customer.updated", "customer.deleted":
@@ -144,7 +151,7 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 
 		// 發票相關事件
 		case "invoice.created", "invoice.updated", "invoice.paid", "invoice.payment_failed",
-			"invoice.finalized", "invoice.sent", "invoice.upcoming", "invoice.voided":
+			"invoice.finalized", "invoice.sent", "invoice.upcoming", "invoice.voided", "invoice.payment_succeeded":
 			var invoiceModel stripe.Invoice
 			if err := json.Unmarshal(event.Data.Raw, &invoiceModel); err != nil {
 				return fmt.Errorf("解析發票數據失敗: %w", err)
@@ -161,7 +168,9 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 			handleErr = sp.handlePaymentIntentEvent(ctx, &paymentIntentModel)
 
 		// 收費相關事件
-		case "charge.succeeded", "charge.failed", "charge.refunded", "charge.captured", "charge.expired":
+		case "charge.succeeded", "charge.failed",
+			"charge.refunded", "charge.captured",
+			"charge.expired", "charge.updated":
 			var chargeModel stripe.Charge
 			if err := json.Unmarshal(event.Data.Raw, &chargeModel); err != nil {
 				return fmt.Errorf("解析收費數據失敗: %w", err)
@@ -300,7 +309,7 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 	}
 
 	// 標記事件為已處理
-	if err := sp.event.MarkEventAsProcessed(ctx, event.ID); err != nil {
+	if err := sp.event.MarkEventAsProcessed(context.Background(), event.ID); err != nil {
 		return fmt.Errorf("標記事件為已處理失敗: %w", err)
 	}
 
@@ -308,13 +317,10 @@ func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) 
 }
 
 // CreateCustomer creates a new customer in Stripe and in the local database
-func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, email, name string) error {
+func (sp *StripePayment) CreateCustomer(ctx context.Context, email, name string) error {
 	params := &stripe.CustomerParams{
 		Email: stripe.String(email),
 		Name:  stripe.String(name),
-		Metadata: map[string]string{
-			"user_id": strconv.FormatUint(userID, 10),
-		},
 	}
 	stripeCustomer, err := sp.client.Customers.New(params)
 	if err != nil {
@@ -322,10 +328,9 @@ func (sp *StripePayment) CreateCustomer(ctx context.Context, userID uint64, emai
 	}
 
 	customerModel := &models.Customer{
-		ID:     stripeCustomer.ID,
-		UserID: userID,
-		Name:   name,
-		Email:  email,
+		ID:    stripeCustomer.ID,
+		Name:  name,
+		Email: email,
 	}
 	if err = sp.customer.Create(ctx, customerModel); err != nil {
 		return fmt.Errorf("failed to create local customer record: %w", err)
@@ -689,22 +694,32 @@ func (sp *StripePayment) ListRefunds(ctx context.Context, chargeID string) ([]*m
 
 // HandleStripeWebhook handles Stripe webhook events
 func (sp *StripePayment) HandleStripeWebhook(ctx context.Context, payload []byte, signature string) error {
-	stripeEvent, err := webhook.ConstructEvent(payload, signature, "")
+	stripeEvent, err := webhook.ConstructEvent(payload, signature, "secret")
 	if err != nil {
 		return fmt.Errorf("failed to verify webhook signature: %w", err)
 	}
 
 	processed, err := sp.event.IsEventProcessed(ctx, stripeEvent.ID)
-	if err != nil {
-		return fmt.Errorf("failed to check event status: %w", err)
-	}
 	if processed {
+		sp.logger.Info("Event is already processed", zap.String("event_id", stripeEvent.ID))
 		return nil
 	}
 
-	sp.dispatcher.jobQueue <- WorkRequest{
+	// 使用 CreateWorkRequest 方法創建工作請求
+
+	workRequest := WorkRequest{
 		Event: &stripeEvent,
-		Ctx:   ctx,
+		Ctx:   context.Background(),
+	}
+
+	// 使用非阻塞的方式發送工作請求到隊列
+	select {
+	case sp.dispatcher.jobQueue <- workRequest:
+		sp.logger.Info("Work request queued successfully", zap.String("event_id", stripeEvent.ID))
+	default:
+		// 如果隊列已滿，記錄警告並返回錯誤
+		sp.logger.Warn("Job queue is full, event not processed", zap.String("event_id", stripeEvent.ID))
+		return fmt.Errorf("job queue is full, event not processed: %s", stripeEvent.ID)
 	}
 
 	return nil
@@ -718,12 +733,7 @@ func (sp *StripePayment) handleCustomerEvent(ctx context.Context, customer *stri
 	if customer.Email != "" {
 		partialCustomer.Email = &customer.Email
 	}
-	if customer.Name != "" {
-		partialCustomer.Name = &customer.Name
-	}
-	if customer.Phone != "" {
-		partialCustomer.Phone = &customer.Phone
-	}
+
 	if customer.Balance != 0 {
 		balance := customer.Balance
 		partialCustomer.Balance = &balance
@@ -798,18 +808,16 @@ func (sp *StripePayment) handleInvoiceEvent(ctx context.Context, invoice *stripe
 	if invoice.Currency != "" {
 		partialInvoice.Currency = &invoice.Currency
 	}
-	if invoice.AmountDue > 0 {
-		amountDue := float64(invoice.AmountDue) / 100
-		partialInvoice.AmountDue = &amountDue
-	}
-	if invoice.AmountPaid > 0 {
-		amountPaid := float64(invoice.AmountPaid) / 100
-		partialInvoice.AmountPaid = &amountPaid
-	}
-	if invoice.AmountRemaining > 0 {
-		amountRemaining := float64(invoice.AmountRemaining) / 100
-		partialInvoice.AmountRemaining = &amountRemaining
-	}
+
+	amountDue := float64(invoice.AmountDue) / 100
+	partialInvoice.AmountDue = &amountDue
+
+	amountPaid := float64(invoice.AmountPaid) / 100
+	partialInvoice.AmountPaid = &amountPaid
+
+	amountRemaining := float64(invoice.AmountRemaining) / 100
+	partialInvoice.AmountRemaining = &amountRemaining
+
 	if invoice.DueDate > 0 {
 		dueDate := time.Unix(invoice.DueDate, 0)
 		partialInvoice.DueDate = &dueDate
@@ -826,7 +834,7 @@ func (sp *StripePayment) handleInvoiceEvent(ctx context.Context, invoice *stripe
 
 	switch eventType {
 	case "invoice.created", "invoice.updated", "invoice.finalized",
-		"invoice.payment_succeeded", "invoice.payment_failed", "invoice.sent":
+		"invoice.payment_succeeded", "invoice.payment_failed", "invoice.sent", "invoice.paid":
 		return sp.invoice.Upsert(ctx, partialInvoice)
 	case "invoice.deleted":
 		return sp.invoice.Delete(ctx, invoice.ID)
@@ -973,6 +981,7 @@ func (sp *StripePayment) handleDisputeEvent(ctx context.Context, dispute *stripe
 }
 
 func (sp *StripePayment) handleProductEvent(ctx context.Context, product *stripe.Product, eventType stripe.EventType) error {
+	sp.logger.Info(fmt.Sprintf("product id:%s", product.ID))
 	partialProduct := &models.PartialProduct{
 		ID: product.ID,
 	}

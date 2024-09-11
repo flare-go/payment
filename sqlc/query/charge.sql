@@ -1,18 +1,18 @@
 -- name: UpsertCharge :exec
 INSERT INTO charges (
-    id, customer_id, payment_intent_id, amount, currency, status, paid, refunded,
-    failure_code, failure_message
+    id, customer_id, payment_intent_id, amount, currency, status, paid, refunded, failure_code, failure_message, created_at, updated_at
 ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
          )
 ON CONFLICT (id) DO UPDATE SET
-                                      id = EXCLUDED.id,
-                                      payment_intent_id = EXCLUDED.payment_intent_id,
-                                      amount = EXCLUDED.amount,
-                                      currency = EXCLUDED.currency,
-                                      status = EXCLUDED.status,
-                                      paid = EXCLUDED.paid,
-                                      refunded = EXCLUDED.refunded,
-                                      failure_code = EXCLUDED.failure_code,
-                                      failure_message = EXCLUDED.failure_message,
-                                      updated_at = NOW();
+                               customer_id = COALESCE($2, charges.customer_id),
+                               payment_intent_id = COALESCE($3, charges.payment_intent_id),
+                               amount = COALESCE($4, charges.amount),
+                               currency = COALESCE($5, charges.currency),
+                               status = COALESCE($6, charges.status),
+                               paid = COALESCE($7, charges.paid),
+                               refunded = COALESCE($8, charges.refunded),
+                               failure_code = COALESCE($9, charges.failure_code),
+                               failure_message = COALESCE($10, charges.failure_message),
+                               created_at = COALESCE($11, charges.created_at),
+                               updated_at = $12;

@@ -3,13 +3,13 @@ package tax_rate
 import (
 	"context"
 	"fmt"
-	"goflare.io/payment/sqlc"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"goflare.io/payment/driver"
 	"goflare.io/payment/models"
+	"goflare.io/payment/sqlc"
 )
 
 type Repository interface {
@@ -26,80 +26,34 @@ func NewRepository(conn driver.PostgresPool) Repository {
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, taxRate *models.PartialTaxRate) error {
-	query := `
+	const query = `
     INSERT INTO tax_rates (id, display_name, description, jurisdiction, percentage, inclusive, active, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    VALUES (@id, @display_name, @description, @jurisdiction, @percentage, @inclusive, @active, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        display_name = COALESCE(@display_name, tax_rates.display_name),
+        description = COALESCE(@description, tax_rates.description),
+        jurisdiction = COALESCE(@jurisdiction, tax_rates.jurisdiction),
+        percentage = COALESCE(@percentage, tax_rates.percentage),
+        inclusive = COALESCE(@inclusive, tax_rates.inclusive),
+        active = COALESCE(@active, tax_rates.active),
+        updated_at = @updated_at
+    WHERE tax_rates.id = @id
     `
-	args := []interface{}{taxRate.ID}
-	var updateClauses []string
-	argIndex := 2
 
-	if taxRate.DisplayName != nil {
-		args = append(args, *taxRate.DisplayName)
-		updateClauses = append(updateClauses, fmt.Sprintf("display_name = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":           taxRate.ID,
+		"display_name": taxRate.DisplayName,
+		"description":  taxRate.Description,
+		"jurisdiction": taxRate.Jurisdiction,
+		"percentage":   taxRate.Percentage,
+		"inclusive":    taxRate.Inclusive,
+		"active":       taxRate.Active,
+		"created_at":   taxRate.CreatedAt,
+		"updated_at":   now,
 	}
 
-	if taxRate.Description != nil {
-		args = append(args, *taxRate.Description)
-		updateClauses = append(updateClauses, fmt.Sprintf("description = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if taxRate.Jurisdiction != nil {
-		args = append(args, *taxRate.Jurisdiction)
-		updateClauses = append(updateClauses, fmt.Sprintf("jurisdiction = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if taxRate.Percentage != nil {
-		args = append(args, *taxRate.Percentage)
-		updateClauses = append(updateClauses, fmt.Sprintf("percentage = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if taxRate.Inclusive != nil {
-		args = append(args, *taxRate.Inclusive)
-		updateClauses = append(updateClauses, fmt.Sprintf("inclusive = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if taxRate.Active != nil {
-		args = append(args, *taxRate.Active)
-		updateClauses = append(updateClauses, fmt.Sprintf("active = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if taxRate.CreatedAt != nil {
-		args = append(args, *taxRate.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert tax rate: %w", err)
 	}
 

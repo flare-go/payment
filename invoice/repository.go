@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -309,104 +308,41 @@ func (r *repository) ListInvoiceItems(ctx context.Context, tx pgx.Tx, invoiceID 
 }
 
 func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, invoice *models.PartialInvoice) error {
+
 	query := `
     INSERT INTO invoices (id, customer_id, subscription_id, status, currency, amount_due, amount_paid, amount_remaining, due_date, paid_at, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES (@id, @customer_id, @subscription_id, @status, @currency, @amount_due, @amount_paid, @amount_remaining, @due_date, @paid_at, COALESCE(@created_at, NOW()), @updated_at)
     ON CONFLICT (id) DO UPDATE SET
+        customer_id = COALESCE(@customer_id, invoices.customer_id),
+        subscription_id = COALESCE(@subscription_id, invoices.subscription_id),
+        status = COALESCE(@status, invoices.status),
+        currency = COALESCE(@currency, invoices.currency),
+        amount_due = COALESCE(@amount_due, invoices.amount_due),
+        amount_paid = COALESCE(@amount_paid, invoices.amount_paid),
+        amount_remaining = COALESCE(@amount_remaining, invoices.amount_remaining),
+        due_date = COALESCE(@due_date, invoices.due_date),
+        paid_at = COALESCE(@paid_at, invoices.paid_at),
+        updated_at = @updated_at
+    WHERE invoices.id = @id
     `
-	args := []interface{}{invoice.ID}
-	updateClauses := []string{}
-	argIndex := 2
 
-	if invoice.CustomerID != nil {
-		args = append(args, *invoice.CustomerID)
-		updateClauses = append(updateClauses, fmt.Sprintf("customer_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
+	now := time.Now()
+	args := pgx.NamedArgs{
+		"id":               invoice.ID,
+		"customer_id":      invoice.CustomerID,
+		"subscription_id":  invoice.SubscriptionID,
+		"status":           invoice.Status,
+		"currency":         invoice.Currency,
+		"amount_due":       invoice.AmountDue,
+		"amount_paid":      invoice.AmountPaid,
+		"amount_remaining": invoice.AmountRemaining,
+		"due_date":         invoice.DueDate,
+		"paid_at":          invoice.PaidAt,
+		"created_at":       invoice.CreatedAt,
+		"updated_at":       now,
 	}
 
-	if invoice.SubscriptionID != nil {
-		args = append(args, *invoice.SubscriptionID)
-		updateClauses = append(updateClauses, fmt.Sprintf("subscription_id = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.Status != nil {
-		args = append(args, *invoice.Status)
-		updateClauses = append(updateClauses, fmt.Sprintf("status = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.Currency != nil {
-		args = append(args, *invoice.Currency)
-		updateClauses = append(updateClauses, fmt.Sprintf("currency = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.AmountDue != nil {
-		args = append(args, *invoice.AmountDue)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount_due = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.AmountPaid != nil {
-		args = append(args, *invoice.AmountPaid)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount_paid = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.AmountRemaining != nil {
-		args = append(args, *invoice.AmountRemaining)
-		updateClauses = append(updateClauses, fmt.Sprintf("amount_remaining = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.DueDate != nil {
-		args = append(args, *invoice.DueDate)
-		updateClauses = append(updateClauses, fmt.Sprintf("due_date = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.PaidAt != nil {
-		args = append(args, *invoice.PaidAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("paid_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	if invoice.CreatedAt != nil {
-		args = append(args, *invoice.CreatedAt)
-		updateClauses = append(updateClauses, fmt.Sprintf("created_at = $%d", argIndex))
-		argIndex++
-	} else {
-		args = append(args, nil)
-	}
-
-	args = append(args, time.Now())
-	updateClauses = append(updateClauses, fmt.Sprintf("updated_at = $%d", argIndex))
-
-	if len(updateClauses) > 0 {
-		query += strings.Join(updateClauses, ", ")
-	}
-	query += " WHERE id = $1"
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	if _, err := tx.Exec(ctx, query, args); err != nil {
 		return fmt.Errorf("failed to upsert invoice: %w", err)
 	}
 

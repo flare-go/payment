@@ -1,9 +1,10 @@
 package payment
 
 import (
-	"go.uber.org/zap"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -28,7 +29,7 @@ func NewDispatcher(maxWorkers int, jobQueueSize int, stripePayment *StripePaymen
 		maxWorkers:    maxWorkers,
 		jobQueue:      make(chan WorkRequest, jobQueueSize),
 		stripePayment: stripePayment,
-		stop:          make(chan bool), // 初始化 stop channel
+		stop:          make(chan bool),
 	}
 }
 
@@ -54,8 +55,23 @@ func (d *Dispatcher) dispatch() {
 			wg.Add(1)
 			go func(job WorkRequest) {
 				defer wg.Done()
-				jobChannel := <-d.WorkerPool
-				jobChannel <- job
+				select {
+				case jobChannel := <-d.WorkerPool:
+					select {
+					case jobChannel <- job:
+						// 成功將任務發送給 worker
+					case <-job.Ctx.Done():
+						d.stripePayment.logger.Warn("Job context canceled before processing",
+							zap.Error(job.Ctx.Err()),
+							zap.String("event_type", string(job.Event.Type)),
+							zap.String("event_id", job.Event.ID))
+					}
+				case <-job.Ctx.Done():
+					d.stripePayment.logger.Warn("Job context canceled while waiting for available worker",
+						zap.Error(job.Ctx.Err()),
+						zap.String("event_type", string(job.Event.Type)),
+						zap.String("event_id", job.Event.ID))
+				}
 			}(job)
 
 		case <-ticker.C:
@@ -70,7 +86,7 @@ func (d *Dispatcher) dispatch() {
 				tickerInterval = maxTickerInterval
 			}
 
-			ticker.Reset(tickerInterval) // 動態調整檢查頻率
+			ticker.Reset(tickerInterval)
 		case <-d.stop:
 			wg.Wait()
 			return
@@ -79,13 +95,12 @@ func (d *Dispatcher) dispatch() {
 }
 
 func (d *Dispatcher) adjustWorkerPool() {
-	d.mu.Lock() // 獲取鎖
+	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	threshold := float64(len(d.jobQueue)) * 0.75
 	currentWorkerCount := len(d.workers)
 
-	// 增加 Worker
 	if float64(len(d.jobQueue)) > threshold && currentWorkerCount < d.maxWorkers {
 		newWorker := NewWorker(currentWorkerCount+1, d.WorkerPool, d.stripePayment)
 		newWorker.Start()
@@ -93,7 +108,6 @@ func (d *Dispatcher) adjustWorkerPool() {
 		d.stripePayment.logger.Info("Added new worker", zap.Int("worker_id", newWorker.ID))
 	}
 
-	// 減少 Worker
 	if float64(len(d.jobQueue)) < threshold/2 && currentWorkerCount > 1 {
 		worker := d.workers[len(d.workers)-1]
 		worker.Stop()
@@ -112,7 +126,6 @@ func (d *Dispatcher) adjustWorkerPool() {
 }
 
 func (d *Dispatcher) cleanupStoppedWorkers() {
-
 	var activeWorkers []Worker
 	for _, worker := range d.workers {
 		select {
@@ -126,18 +139,18 @@ func (d *Dispatcher) cleanupStoppedWorkers() {
 }
 
 func (d *Dispatcher) Stop() {
-	close(d.stop) // 發送停止信號
+	close(d.stop)
 	var wg sync.WaitGroup
 
-	d.mu.Lock() // 鎖定對 workers 的訪問
+	d.mu.Lock()
 	for _, worker := range d.workers {
 		wg.Add(1)
 		go func(w Worker) {
 			defer wg.Done()
-			w.Stop() // 停止每個 worker
+			w.Stop()
 		}(worker)
 	}
-	d.mu.Unlock() // 解鎖
+	d.mu.Unlock()
 
-	wg.Wait() // 等待所有 worker 都完成停止
+	wg.Wait()
 }
