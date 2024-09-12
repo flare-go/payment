@@ -530,7 +530,7 @@ func (sp *StripePayment) ListRefunds(ctx context.Context, chargeID string) ([]*m
 
 // HandleStripeWebhook handles Stripe webhook events
 func (sp *StripePayment) HandleStripeWebhook(ctx context.Context, payload []byte, signature string) error {
-	stripeEvent, err := webhook.ConstructEvent(payload, signature, "whsec_d24f8aee7421f9a91436c24e37a2e39a6c4543a846c4293966ff9026320c87ed")
+	stripeEvent, err := webhook.ConstructEvent(payload, signature, "秘密")
 	if err != nil {
 		return fmt.Errorf("failed to verify webhook signature: %w", err)
 	}
