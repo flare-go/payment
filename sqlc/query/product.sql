@@ -34,15 +34,8 @@ FROM products
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
--- name: UpsertProduct :exec
-INSERT INTO products (
-    id, name, description, active, metadata
-) VALUES (
-             $1, $2, $3, $4, $5
-         )
-ON CONFLICT (id) DO UPDATE SET
-                                      name = EXCLUDED.name,
-                                      description = EXCLUDED.description,
-                                      active = EXCLUDED.active,
-                                      metadata = EXCLUDED.metadata,
-                                      updated_at = NOW();
+-- name: GetProductsByCategory :many
+SELECT DISTINCT p.* FROM products p
+                             JOIN product_categories pc ON p.id = pc.product_id
+WHERE pc.category_id = $1
+LIMIT $2 OFFSET $3;

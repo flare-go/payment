@@ -66,7 +66,7 @@ func InitializePaymentService() (*server.Server, error) {
 	discountService := discount.NewService(discountRepository, transactionManager)
 	disputesRepository := disputes.NewRepository(postgresPool, logger)
 	disputesService := disputes.NewService(disputesRepository, transactionManager, logger)
-	eventRepository, err := event.NewRepository(postgresPool, logger, multiCache, manager)
+	eventRepository, err := event.NewRepository(postgresPool, logger)
 	if err != nil {
 		return nil, err
 	}

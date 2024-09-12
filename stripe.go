@@ -4,7 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/sync/errgroup"
+	"github.com/nats-io/nats.go"
+	"strings"
 	"time"
 
 	"github.com/stripe/stripe-go/v79"
@@ -36,7 +37,10 @@ import (
 )
 
 type StripePayment struct {
-	client          *client.API
+	client        *client.API
+	natsConn      *nats.Conn
+	subscriptions []*nats.Subscription
+
 	charge          charge.Service
 	checkoutSession checkout_session.Service
 	coupon          coupon.Service
@@ -57,8 +61,7 @@ type StripePayment struct {
 	subscription    subscription.Service
 	taxRate         tax_rate.Service
 
-	dispatcher *Dispatcher
-	logger     *zap.Logger
+	logger *zap.Logger
 }
 
 func NewStripePayment(config *config.Config,
@@ -105,215 +108,52 @@ func NewStripePayment(config *config.Config,
 		refund:          rs,
 		logger:          logger,
 	}
+	nc, err := nats.Connect(nats.DefaultURL)
+	if err != nil {
+		logger.Error("error connecting to nats", zap.Error(err))
+	}
 
-	sp.dispatcher = NewDispatcher(10, 100, sp) // 10 workers, 100 job queue size
-	sp.dispatcher.Run()
+	sp.natsConn = nc
+
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleEvent, NatsSubjectAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleProcessedEvent, NatsSubjectProcessed))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleCustomerEvent, NatsSubjectCustomer, NatsSubjectCreated))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleCustomerEvent, NatsSubjectCustomer, NatsSubjectUpdated))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleCustomerEvent, NatsSubjectCustomer, NatsSubjectDeleted))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleSubscriptionEvent, NatsSubjectCustomer, NatsSubjectSubscription, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleInvoiceEvent, NatsSubjectInvoice, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handlePaymentIntentEvent, NatsSubjectPaymentIntent, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleChargeEvent, NatsSubjectCharge, NatsSubjectSucceeded))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleChargeEvent, NatsSubjectCharge, NatsSubjectFailed))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleChargeEvent, NatsSubjectCharge, NatsSubjectRefunded))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleChargeEvent, NatsSubjectCharge, NatsSubjectCaptured))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleChargeEvent, NatsSubjectCharge, NatsSubjectExpired))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleChargeEvent, NatsSubjectCharge, NatsSubjectUpdated))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleDisputeEvent, NatsSubjectCharge, NatsSubjectDispute, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleProductEvent, NatsSubjectProduct, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handlePriceEvent, NatsSubjectPrice, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handlePaymentMethodEvent, NatsSubjectPaymentMethod, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleCouponEvent, NatsSubjectCoupon, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleDiscountEvent, NatsSubjectCustomer, NatsSubjectDiscount, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleCheckoutSessionEvent, NatsSubjectCheckout, NatsSubjectSession, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleRefundEvent, NatsSubjectRefund, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handlePromotionCodeEvent, NatsSubjectPromotionCode, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleQuoteEvent, NatsSubjectQuote, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handlePaymentLinkEvent, NatsSubjectPaymentLink, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleTaxRateEvent, NatsSubjectTaxRate, NatsSubjectSingleAll))
+	sp.subscriptions = append(sp.subscriptions, sp.subscribeToEvent(sp.handleReviewEvent, NatsSubjectReview, NatsSubjectSingleAll))
 
 	return sp
 }
 
-func (sp *StripePayment) processEvent(ctx context.Context, event *stripe.Event) error {
-	// 使用 errgroup 來管理可能的並發操作
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		var handleErr error
-		start := time.Now()
-
-		eventModel := &models.Event{
-			ID:        event.ID,
-			Type:      event.Type,
-			Processed: false,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-		handleErr = sp.event.Create(ctx, eventModel)
-
-		switch event.Type {
-		// 客戶相關事件
-		case "customer.created", "customer.updated", "customer.deleted":
-			var customerModel stripe.Customer
-			if err := json.Unmarshal(event.Data.Raw, &customerModel); err != nil {
-				return fmt.Errorf("解析客戶數據失敗: %w", err)
-			}
-			handleErr = sp.handleCustomerEvent(ctx, &customerModel, event.Type)
-
-		// 訂閱相關事件
-		case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted",
-			"customer.subscription.trial_will_end", "customer.subscription.pending_update_applied",
-			"customer.subscription.pending_update_expired", "customer.subscription.paused",
-			"customer.subscription.resumed":
-			var subscriptionModel stripe.Subscription
-			if err := json.Unmarshal(event.Data.Raw, &subscriptionModel); err != nil {
-				return fmt.Errorf("解析訂閱數據失敗: %w", err)
-			}
-			handleErr = sp.handleSubscriptionEvent(ctx, &subscriptionModel, event.Type)
-
-		// 發票相關事件
-		case "invoice.created", "invoice.updated", "invoice.paid", "invoice.payment_failed",
-			"invoice.finalized", "invoice.sent", "invoice.upcoming", "invoice.voided", "invoice.payment_succeeded":
-			var invoiceModel stripe.Invoice
-			if err := json.Unmarshal(event.Data.Raw, &invoiceModel); err != nil {
-				return fmt.Errorf("解析發票數據失敗: %w", err)
-			}
-			handleErr = sp.handleInvoiceEvent(ctx, &invoiceModel, event.Type)
-
-		// 支付意圖相關事件
-		case "payment_intent.created", "payment_intent.succeeded", "payment_intent.payment_failed",
-			"payment_intent.canceled", "payment_intent.processing", "payment_intent.requires_action":
-			var paymentIntentModel stripe.PaymentIntent
-			if err := json.Unmarshal(event.Data.Raw, &paymentIntentModel); err != nil {
-				return fmt.Errorf("解析支付意圖數據失敗: %w", err)
-			}
-			handleErr = sp.handlePaymentIntentEvent(ctx, &paymentIntentModel)
-
-		// 收費相關事件
-		case "charge.succeeded", "charge.failed",
-			"charge.refunded", "charge.captured",
-			"charge.expired", "charge.updated":
-			var chargeModel stripe.Charge
-			if err := json.Unmarshal(event.Data.Raw, &chargeModel); err != nil {
-				return fmt.Errorf("解析收費數據失敗: %w", err)
-			}
-			handleErr = sp.handleChargeEvent(ctx, &chargeModel)
-
-		// 爭議相關事件
-		case "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed",
-			"charge.dispute.funds_reinstated", "charge.dispute.funds_withdrawn":
-			var disputeModel stripe.Dispute
-			if err := json.Unmarshal(event.Data.Raw, &disputeModel); err != nil {
-				return fmt.Errorf("解析爭議數據失敗: %w", err)
-			}
-			handleErr = sp.handleDisputeEvent(ctx, &disputeModel, event.Type)
-
-		// 產品相關事件
-		case "product.created", "product.updated", "product.deleted":
-			var productModel stripe.Product
-			if err := json.Unmarshal(event.Data.Raw, &productModel); err != nil {
-				return fmt.Errorf("解析產品數據失敗: %w", err)
-			}
-			handleErr = sp.handleProductEvent(ctx, &productModel, event.Type)
-
-		// 價格相關事件
-		case "price.created", "price.updated", "price.deleted":
-			var priceModel stripe.Price
-			if err := json.Unmarshal(event.Data.Raw, &priceModel); err != nil {
-				return fmt.Errorf("解析價格數據失敗: %w", err)
-			}
-			handleErr = sp.handlePriceEvent(ctx, &priceModel, event.Type)
-
-		// 支付方式相關事件
-		case "payment_method.attached", "payment_method.updated", "payment_method.detached":
-			var paymentMethodModel stripe.PaymentMethod
-			if err := json.Unmarshal(event.Data.Raw, &paymentMethodModel); err != nil {
-				return fmt.Errorf("解析支付方式數據失敗: %w", err)
-			}
-			handleErr = sp.handlePaymentMethodEvent(ctx, &paymentMethodModel, event.Type)
-
-		// 優惠券相關事件
-		case "coupon.created", "coupon.updated", "coupon.deleted":
-			var couponModel stripe.Coupon
-			if err := json.Unmarshal(event.Data.Raw, &couponModel); err != nil {
-				return fmt.Errorf("解析優惠券數據失敗: %w", err)
-			}
-			handleErr = sp.handleCouponEvent(ctx, &couponModel, event.Type)
-
-		// 折扣相關事件
-		case "customer.discount.created", "customer.discount.updated", "customer.discount.deleted":
-			var discountModel stripe.Discount
-			if err := json.Unmarshal(event.Data.Raw, &discountModel); err != nil {
-				return fmt.Errorf("解析折扣數據失敗: %w", err)
-			}
-			handleErr = sp.handleDiscountEvent(ctx, &discountModel, event.Type)
-
-		// 結帳會話相關事件
-		case "checkout.session.completed", "checkout.session.async_payment_succeeded",
-			"checkout.session.async_payment_failed", "checkout.session.expired":
-			var checkoutSessionModel stripe.CheckoutSession
-			if err := json.Unmarshal(event.Data.Raw, &checkoutSessionModel); err != nil {
-				return fmt.Errorf("解析結帳會話數據失敗: %w", err)
-			}
-			handleErr = sp.handleCheckoutSessionEvent(ctx, &checkoutSessionModel, event.Type)
-
-		// 退款相關事件
-		case "refund.created", "refund.updated":
-			var refundModel stripe.Refund
-			if err := json.Unmarshal(event.Data.Raw, &refundModel); err != nil {
-				return fmt.Errorf("解析退款數據失敗: %w", err)
-			}
-			handleErr = sp.handleRefundEvent(ctx, &refundModel)
-
-		// 促銷代碼相關事件
-		case "promotion_code.created", "promotion_code.updated":
-			var promotionCodeModel stripe.PromotionCode
-			if err := json.Unmarshal(event.Data.Raw, &promotionCodeModel); err != nil {
-				return fmt.Errorf("解析促銷代碼數據失敗: %w", err)
-			}
-			handleErr = sp.handlePromotionCodeEvent(ctx, &promotionCodeModel, event.Type)
-
-		// 報價相關事件
-		case "quote.created", "quote.finalized", "quote.accepted", "quote.canceled":
-			var quoteModel stripe.Quote
-			if err := json.Unmarshal(event.Data.Raw, &quoteModel); err != nil {
-				return fmt.Errorf("解析報價數據失敗: %w", err)
-			}
-			handleErr = sp.handleQuoteEvent(ctx, &quoteModel, event.Type)
-
-		// 支付連結相關事件
-		case "payment_link.created", "payment_link.updated":
-			var paymentLinkModel stripe.PaymentLink
-			if err := json.Unmarshal(event.Data.Raw, &paymentLinkModel); err != nil {
-				return fmt.Errorf("解析支付連結數據失敗: %w", err)
-			}
-			handleErr = sp.handlePaymentLinkEvent(ctx, &paymentLinkModel, event.Type)
-
-		// 稅率相關事件
-		case "tax_rate.sql.created", "tax_rate.sql.updated":
-			var taxRateModel stripe.TaxRate
-			if err := json.Unmarshal(event.Data.Raw, &taxRateModel); err != nil {
-				return fmt.Errorf("解析稅率數據失敗: %w", err)
-			}
-			handleErr = sp.handleTaxRateEvent(ctx, &taxRateModel, event.Type)
-
-		// 審查相關事件
-		case "review.opened", "review.closed":
-			var reviewModel stripe.Review
-			if err := json.Unmarshal(event.Data.Raw, &reviewModel); err != nil {
-				return fmt.Errorf("解析審查數據失敗: %w", err)
-			}
-			handleErr = sp.handleReviewEvent(ctx, &reviewModel, event.Type)
-
-		default:
-			sp.logger.Info("未處理的事件類型",
-				zap.String("type", string(event.Type)),
-				zap.String("event_id", event.ID))
-			return nil
-		}
-
-		if handleErr != nil {
-			return fmt.Errorf("處理事件 %s 時發生錯誤: %w", event.Type, handleErr)
-		}
-
-		duration := time.Since(start)
-		sp.logger.Info("事件處理成功",
-			zap.String("event_type", string(event.Type)),
-			zap.String("event_id", event.ID),
-			zap.Duration("duration", duration))
-
+func (sp *StripePayment) subscribeToEvent(handler func(msg *nats.Msg), subject ...string) *nats.Subscription {
+	subj := "stripe.event" + strings.Join(subject, "")
+	sub, err := sp.natsConn.Subscribe(subj, handler)
+	if err != nil {
+		sp.logger.Error("Failed to subscribe to event", zap.Error(err), zap.String("subject", subj))
 		return nil
-	})
-
-	// 等待所有操作完成
-	if err := g.Wait(); err != nil {
-		return err
 	}
-
-	// 標記事件為已處理
-	if err := sp.event.MarkEventAsProcessed(context.Background(), event.ID); err != nil {
-		return fmt.Errorf("標記事件為已處理失敗: %w", err)
-	}
-
-	return nil
+	return sub
 }
 
 // CreateCustomer creates a new customer in Stripe and in the local database
@@ -345,7 +185,7 @@ func (sp *StripePayment) GetCustomer(ctx context.Context, customerID string) (*m
 }
 
 // UpdateCustomerBalance updates a customer in Stripe and in the local database
-func (sp *StripePayment) UpdateCustomerBalance(ctx context.Context, updateCustomer *models.Customer) error {
+func (sp *StripePayment) UpdateCustomerBalance(updateCustomer *models.Customer) error {
 
 	params := &stripe.CustomerParams{
 		Balance: &updateCustomer.Balance,
@@ -353,10 +193,6 @@ func (sp *StripePayment) UpdateCustomerBalance(ctx context.Context, updateCustom
 
 	if _, err := sp.client.Customers.Update(updateCustomer.ID, params); err != nil {
 		return fmt.Errorf("failed to update Stripe customer: %w", err)
-	}
-
-	if err := sp.customer.UpdateBalance(ctx, updateCustomer.ID, uint64(updateCustomer.Balance)); err != nil {
-		return fmt.Errorf("failed to update local customer record: %w", err)
 	}
 
 	return nil
@@ -694,7 +530,7 @@ func (sp *StripePayment) ListRefunds(ctx context.Context, chargeID string) ([]*m
 
 // HandleStripeWebhook handles Stripe webhook events
 func (sp *StripePayment) HandleStripeWebhook(ctx context.Context, payload []byte, signature string) error {
-	stripeEvent, err := webhook.ConstructEvent(payload, signature, "secret")
+	stripeEvent, err := webhook.ConstructEvent(payload, signature, "whsec_d24f8aee7421f9a91436c24e37a2e39a6c4543a846c4293966ff9026320c87ed")
 	if err != nil {
 		return fmt.Errorf("failed to verify webhook signature: %w", err)
 	}
@@ -707,143 +543,273 @@ func (sp *StripePayment) HandleStripeWebhook(ctx context.Context, payload []byte
 
 	// 使用 CreateWorkRequest 方法創建工作請求
 
-	workRequest := WorkRequest{
-		Event: &stripeEvent,
-		Ctx:   context.Background(),
+	subject := fmt.Sprintf("stripe.event.%s", stripeEvent.Type)
+	if err = sp.natsConn.Publish(subject, payload); err != nil {
+		return fmt.Errorf("failed to publish event to NATS: %w", err)
 	}
 
-	// 使用非阻塞的方式發送工作請求到隊列
-	select {
-	case sp.dispatcher.jobQueue <- workRequest:
-		sp.logger.Info("Work request queued successfully", zap.String("event_id", stripeEvent.ID))
-	default:
-		// 如果隊列已滿，記錄警告並返回錯誤
-		sp.logger.Warn("Job queue is full, event not processed", zap.String("event_id", stripeEvent.ID))
-		return fmt.Errorf("job queue is full, event not processed: %s", stripeEvent.ID)
-	}
+	sp.logger.Info("Stripe event published to NATS",
+		zap.String("event_id", stripeEvent.ID),
+		zap.String("event_type", string(stripeEvent.Type)))
 
 	return nil
 }
 
-func (sp *StripePayment) handleCustomerEvent(ctx context.Context, customer *stripe.Customer, eventType stripe.EventType) error {
+func (sp *StripePayment) handleEvent(msg *nats.Msg) {
+
+	ctx := context.Background()
+	var stripeEvent stripe.Event
+	if err := json.Unmarshal(msg.Data, &stripeEvent); err != nil {
+		sp.logger.Error("Failed to unmarshal event", zap.Error(err))
+		return
+	}
+
+	if msg.Subject == NatsSubjectEventProcessed {
+		return
+	}
+
+	eventModel := &models.Event{
+		ID:        stripeEvent.ID,
+		Type:      stripeEvent.Type,
+		Processed: false,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := sp.event.Create(ctx, eventModel); err != nil {
+		sp.logger.Error("Failed to create event", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe event created", zap.String("event_id", stripeEvent.ID))
+}
+
+func (sp *StripePayment) handleProcessedEvent(msg *nats.Msg) {
+
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal customer event", zap.Error(err))
+		return
+	}
+
+	if err := sp.event.MarkEventAsProcessed(context.Background(), eventModel.ID); err != nil {
+		sp.logger.Error("Failed to mark event as processed", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe event processed", zap.String("event_id", msg.Subject))
+}
+
+func (sp *StripePayment) handleCustomerEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe customer event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal customer event", zap.Error(err))
+		return
+	}
+
+	customerModel := new(stripe.Customer)
+	if err := json.Unmarshal(eventModel.Data.Raw, &customerModel); err != nil {
+		sp.logger.Error("Failed to unmarshal customer event", zap.Error(err))
+		return
+	}
+
 	partialCustomer := &models.PartialCustomer{
-		ID: customer.ID,
+		ID: customerModel.ID,
 	}
 
-	if customer.Email != "" {
-		partialCustomer.Email = &customer.Email
+	if customerModel.Email != "" {
+		partialCustomer.Email = &customerModel.Email
 	}
 
-	if customer.Balance != 0 {
-		balance := customer.Balance
+	if customerModel.Balance != 0 {
+		balance := customerModel.Balance
 		partialCustomer.Balance = &balance
 	}
-	if customer.Created > 0 {
-		createdAt := time.Unix(customer.Created, 0)
+	if customerModel.Created > 0 {
+		createdAt := time.Unix(customerModel.Created, 0)
 		partialCustomer.CreatedAt = &createdAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "customer.created", "customer.updated":
-		return sp.customer.Upsert(ctx, partialCustomer)
+		err = sp.customer.Upsert(ctx, partialCustomer)
 	case "customer.deleted":
-		return sp.customer.Delete(ctx, customer.ID)
+		err = sp.customer.Delete(ctx, customerModel.ID)
 	default:
-		return fmt.Errorf("unexpected customer event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected customer event type: %s", eventModel.Type))
 	}
+	if err != nil {
+		sp.logger.Error("Failed to upsert customer event", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe customer event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleSubscriptionEvent(ctx context.Context, subscription *stripe.Subscription, eventType stripe.EventType) error {
-	partialSubscription := &models.PartialSubscription{
-		ID: subscription.ID,
+func (sp *StripePayment) handleSubscriptionEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe subscription event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal subscription event", zap.Error(err))
+		return
 	}
 
-	if subscription.Customer != nil {
-		partialSubscription.CustomerID = &subscription.Customer.ID
+	subscriptionModel := new(stripe.Subscription)
+	if err := json.Unmarshal(eventModel.Data.Raw, &subscriptionModel); err != nil {
+		sp.logger.Error("Failed to unmarshal subscription event", zap.Error(err))
+		return
 	}
-	if subscription.Status != "" {
-		partialSubscription.Status = &subscription.Status
+
+	partialSubscription := &models.PartialSubscription{
+		ID: subscriptionModel.ID,
 	}
-	if subscription.CurrentPeriodStart > 0 {
-		start := time.Unix(subscription.CurrentPeriodStart, 0)
+
+	if subscriptionModel.Customer != nil {
+		partialSubscription.CustomerID = &subscriptionModel.Customer.ID
+	}
+	if subscriptionModel.Status != "" {
+		partialSubscription.Status = &subscriptionModel.Status
+	}
+	if subscriptionModel.CurrentPeriodStart > 0 {
+		start := time.Unix(subscriptionModel.CurrentPeriodStart, 0)
 		partialSubscription.CurrentPeriodStart = &start
 	}
-	if subscription.CurrentPeriodEnd > 0 {
-		end := time.Unix(subscription.CurrentPeriodEnd, 0)
+	if subscriptionModel.CurrentPeriodEnd > 0 {
+		end := time.Unix(subscriptionModel.CurrentPeriodEnd, 0)
 		partialSubscription.CurrentPeriodEnd = &end
 	}
-	partialSubscription.CancelAtPeriodEnd = &subscription.CancelAtPeriodEnd
-	if subscription.CanceledAt > 0 {
-		canceledAt := time.Unix(subscription.CanceledAt, 0)
+	partialSubscription.CancelAtPeriodEnd = &subscriptionModel.CancelAtPeriodEnd
+	if subscriptionModel.CanceledAt > 0 {
+		canceledAt := time.Unix(subscriptionModel.CanceledAt, 0)
 		partialSubscription.CanceledAt = &canceledAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "customer.subscription.created", "customer.subscription.updated",
 		"customer.subscription.trial_will_end", "customer.subscription.pending_update_applied",
 		"customer.subscription.pending_update_expired", "customer.subscription.paused",
 		"customer.subscription.resumed":
-		return sp.subscription.Upsert(ctx, partialSubscription)
+		err = sp.subscription.Upsert(ctx, partialSubscription)
 	case "customer.subscription.deleted":
-		return sp.subscription.Delete(ctx, subscription.ID)
+		err = sp.subscription.Delete(ctx, subscriptionModel.ID)
 	default:
-		return fmt.Errorf("unexpected subscription event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected customer subscription event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert subscription event", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe subscription event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleInvoiceEvent(ctx context.Context, invoice *stripe.Invoice, eventType stripe.EventType) error {
+func (sp *StripePayment) handleInvoiceEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe invoice event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal invoice event", zap.Error(err))
+		return
+	}
+
+	invoiceModel := new(stripe.Invoice)
+	if err := json.Unmarshal(eventModel.Data.Raw, &invoiceModel); err != nil {
+		sp.logger.Error("Failed to unmarshal invoice event", zap.Error(err))
+		return
+	}
+
 	partialInvoice := &models.PartialInvoice{
-		ID: invoice.ID,
+		ID: invoiceModel.ID,
 	}
 
-	if invoice.Customer != nil {
-		partialInvoice.CustomerID = &invoice.Customer.ID
+	if invoiceModel.Customer != nil {
+		partialInvoice.CustomerID = &invoiceModel.Customer.ID
 	}
-	if invoice.Subscription != nil {
-		partialInvoice.SubscriptionID = &invoice.Subscription.ID
+	if invoiceModel.Subscription != nil {
+		partialInvoice.SubscriptionID = &invoiceModel.Subscription.ID
 	}
-	if invoice.Status != "" {
-		partialInvoice.Status = &invoice.Status
+	if invoiceModel.Status != "" {
+		partialInvoice.Status = &invoiceModel.Status
 	}
-	if invoice.Currency != "" {
-		partialInvoice.Currency = &invoice.Currency
+	if invoiceModel.Currency != "" {
+		partialInvoice.Currency = &invoiceModel.Currency
 	}
 
-	amountDue := float64(invoice.AmountDue) / 100
+	amountDue := float64(invoiceModel.AmountDue) / 100
 	partialInvoice.AmountDue = &amountDue
 
-	amountPaid := float64(invoice.AmountPaid) / 100
+	amountPaid := float64(invoiceModel.AmountPaid) / 100
 	partialInvoice.AmountPaid = &amountPaid
 
-	amountRemaining := float64(invoice.AmountRemaining) / 100
+	amountRemaining := float64(invoiceModel.AmountRemaining) / 100
 	partialInvoice.AmountRemaining = &amountRemaining
 
-	if invoice.DueDate > 0 {
-		dueDate := time.Unix(invoice.DueDate, 0)
+	if invoiceModel.DueDate > 0 {
+		dueDate := time.Unix(invoiceModel.DueDate, 0)
 		partialInvoice.DueDate = &dueDate
 	}
-	if invoice.Created > 0 {
-		createdAt := time.Unix(invoice.Created, 0)
+	if invoiceModel.Created > 0 {
+		createdAt := time.Unix(invoiceModel.Created, 0)
 		partialInvoice.CreatedAt = &createdAt
 	}
 
-	if invoice.Status == stripe.InvoiceStatusPaid {
+	if invoiceModel.Status == stripe.InvoiceStatusPaid {
 		now := time.Now()
 		partialInvoice.PaidAt = &now
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "invoice.created", "invoice.updated", "invoice.finalized",
 		"invoice.payment_succeeded", "invoice.payment_failed", "invoice.sent", "invoice.paid":
-		return sp.invoice.Upsert(ctx, partialInvoice)
+		err = sp.invoice.Upsert(ctx, partialInvoice)
 	case "invoice.deleted":
-		return sp.invoice.Delete(ctx, invoice.ID)
+		err = sp.invoice.Delete(ctx, invoiceModel.ID)
 	default:
-		return fmt.Errorf("unexpected invoice event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected invoice event type: %s", eventModel.Type))
 	}
+	if err != nil {
+		sp.logger.Error("Failed to upsert invoice event", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe invoice event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handlePaymentIntentEvent(ctx context.Context, paymentIntent *stripe.PaymentIntent) error {
+func (sp *StripePayment) handlePaymentIntentEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe payment intent event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal payment intent event", zap.Error(err))
+		return
+	}
+
+	paymentIntent := new(stripe.PaymentIntent)
+	if err := json.Unmarshal(eventModel.Data.Raw, &paymentIntent); err != nil {
+		sp.logger.Error("Failed to unmarshal payment intent event", zap.Error(err))
+		return
+	}
 	partialPaymentIntent := &models.PartialPaymentIntent{
 		ID: paymentIntent.ID,
 	}
@@ -878,77 +844,143 @@ func (sp *StripePayment) handlePaymentIntentEvent(ctx context.Context, paymentIn
 		partialPaymentIntent.CreatedAt = &createdAt
 	}
 
-	return sp.paymentIntent.Upsert(ctx, partialPaymentIntent)
+	if err := sp.paymentIntent.Upsert(ctx, partialPaymentIntent); err != nil {
+		sp.logger.Error("Failed to upsert payment intent", zap.Error(err))
+	}
+
+	if err := sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe payment intent event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleChargeEvent(ctx context.Context, charge *stripe.Charge) error {
-	partialCharge := &models.PartialCharge{
-		ID: charge.ID,
+func (sp *StripePayment) handleChargeEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe charge event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal charge event", zap.Error(err))
+		return
 	}
 
-	if charge.Customer != nil {
-		partialCharge.CustomerID = &charge.Customer.ID
+	chargeModel := new(stripe.Charge)
+	if err := json.Unmarshal(eventModel.Data.Raw, &chargeModel); err != nil {
+		sp.logger.Error("Failed to unmarshal charge event", zap.Error(err))
+		return
 	}
-	if charge.PaymentIntent != nil {
-		partialCharge.PaymentIntentID = &charge.PaymentIntent.ID
+
+	partialCharge := &models.PartialCharge{
+		ID: chargeModel.ID,
 	}
-	if charge.Amount > 0 {
-		amount := float64(charge.Amount) / 100
+
+	if chargeModel.Customer != nil {
+		partialCharge.CustomerID = &chargeModel.Customer.ID
+	}
+	if chargeModel.PaymentIntent != nil {
+		partialCharge.PaymentIntentID = &chargeModel.PaymentIntent.ID
+	}
+	if chargeModel.Amount > 0 {
+		amount := float64(chargeModel.Amount) / 100
 		partialCharge.Amount = &amount
 	}
-	if charge.Currency != "" {
-		partialCharge.Currency = &charge.Currency
+	if chargeModel.Currency != "" {
+		partialCharge.Currency = &chargeModel.Currency
 	}
-	if charge.Status != "" {
-		partialCharge.Status = &charge.Status
+	if chargeModel.Status != "" {
+		partialCharge.Status = &chargeModel.Status
 	}
-	partialCharge.Paid = &charge.Paid
-	partialCharge.Refunded = &charge.Refunded
-	if charge.FailureCode != "" {
-		partialCharge.FailureCode = &charge.FailureCode
+	partialCharge.Paid = &chargeModel.Paid
+	partialCharge.Refunded = &chargeModel.Refunded
+	if chargeModel.FailureCode != "" {
+		partialCharge.FailureCode = &chargeModel.FailureCode
 	}
-	if charge.FailureMessage != "" {
-		partialCharge.FailureMessage = &charge.FailureMessage
+	if chargeModel.FailureMessage != "" {
+		partialCharge.FailureMessage = &chargeModel.FailureMessage
 	}
-	if charge.Created > 0 {
-		createdAt := time.Unix(charge.Created, 0)
+	if chargeModel.Created > 0 {
+		createdAt := time.Unix(chargeModel.Created, 0)
 		partialCharge.CreatedAt = &createdAt
 	}
 
-	return sp.charge.Upsert(ctx, partialCharge)
+	if err := sp.charge.Upsert(ctx, partialCharge); err != nil {
+		sp.logger.Error("Failed to upsert charge", zap.Error(err))
+	}
+
+	if err := sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe charge event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleRefundEvent(ctx context.Context, refund *stripe.Refund) error {
-	partialRefund := &models.PartialRefund{
-		ID: refund.ID,
+func (sp *StripePayment) handleRefundEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe refund event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal refund event", zap.Error(err))
+		return
 	}
 
-	if refund.Charge != nil {
-		partialRefund.ChargeID = &refund.Charge.ID
+	refundModel := new(stripe.Refund)
+	if err := json.Unmarshal(eventModel.Data.Raw, &refundModel); err != nil {
+		sp.logger.Error("Failed to unmarshal refund event", zap.Error(err))
+		return
 	}
-	if refund.Amount > 0 {
-		amount := float64(refund.Amount)
+	partialRefund := &models.PartialRefund{
+		ID: refundModel.ID,
+	}
+
+	if refundModel.Charge != nil {
+		partialRefund.ChargeID = &refundModel.Charge.ID
+	}
+	if refundModel.Amount > 0 {
+		amount := float64(refundModel.Amount)
 		partialRefund.Amount = &amount
 	}
-	if refund.Status != "" {
-		partialRefund.Status = &refund.Status
+	if refundModel.Status != "" {
+		partialRefund.Status = &refundModel.Status
 	}
-	if refund.Reason != "" {
-		partialRefund.Reason = &refund.Reason
+	if refundModel.Reason != "" {
+		partialRefund.Reason = &refundModel.Reason
 	}
-	if refund.Created > 0 {
-		createdAt := time.Unix(refund.Created, 0)
+	if refundModel.Created > 0 {
+		createdAt := time.Unix(refundModel.Created, 0)
 		partialRefund.CreatedAt = &createdAt
 	}
 
 	if err := sp.refund.Upsert(ctx, partialRefund); err != nil {
-		return fmt.Errorf("處理退款失敗: %w", err)
+		sp.logger.Error(fmt.Sprintf("處理退款失敗: %s", err))
 	}
 
-	return nil
+	if err := sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe refund event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleDisputeEvent(ctx context.Context, dispute *stripe.Dispute, eventType stripe.EventType) error {
+func (sp *StripePayment) handleDisputeEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe dispute event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal dispute event", zap.Error(err))
+		return
+	}
+
+	dispute := new(stripe.Dispute)
+	if err := json.Unmarshal(eventModel.Data.Raw, &dispute); err != nil {
+		sp.logger.Error("Failed to unmarshal dispute event", zap.Error(err))
+		return
+	}
 	partialDispute := &models.PartialDispute{
 		ID: dispute.ID,
 	}
@@ -970,83 +1002,161 @@ func (sp *StripePayment) handleDisputeEvent(ctx context.Context, dispute *stripe
 		partialDispute.CreatedAt = &createdAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "charge.dispute.created", "charge.dispute.updated":
-		return sp.dispute.Upsert(ctx, partialDispute)
+		err = sp.dispute.Upsert(ctx, partialDispute)
 	case "charge.dispute.closed":
-		return sp.dispute.Close(ctx, dispute.ID)
+		err = sp.dispute.Close(ctx, dispute.ID)
 	default:
-		return fmt.Errorf("unexpected dispute event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected dispute event type: %s", eventModel.Type))
 	}
+	if err != nil {
+		sp.logger.Error("Failed to upsert dispute", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe dispute event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleProductEvent(ctx context.Context, product *stripe.Product, eventType stripe.EventType) error {
-	sp.logger.Info(fmt.Sprintf("product id:%s", product.ID))
+func (sp *StripePayment) handleProductEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe product event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal product event", zap.Error(err))
+		return
+	}
+
+	productModel := new(stripe.Product)
+	if err := json.Unmarshal(eventModel.Data.Raw, &productModel); err != nil {
+		sp.logger.Error("Failed to unmarshal product event", zap.Error(err))
+		return
+	}
+
 	partialProduct := &models.PartialProduct{
-		ID: product.ID,
+		ID: productModel.ID,
 	}
 
-	if product.Name != "" {
-		partialProduct.Name = &product.Name
+	if productModel.Name != "" {
+		partialProduct.Name = &productModel.Name
 	}
-	if product.Description != "" {
-		partialProduct.Description = &product.Description
+	if productModel.Description != "" {
+		partialProduct.Description = &productModel.Description
 	}
-	partialProduct.Active = &product.Active
-	if product.Metadata != nil {
-		partialProduct.Metadata = &product.Metadata
+	partialProduct.Active = &productModel.Active
+	if productModel.Metadata != nil {
+		partialProduct.Metadata = &productModel.Metadata
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "product.created", "product.updated":
-		return sp.product.Upsert(ctx, partialProduct)
+		err = sp.product.Upsert(ctx, partialProduct)
 	case "product.deleted":
-		return sp.product.Delete(ctx, product.ID)
+		err = sp.product.Delete(ctx, productModel.ID)
 	default:
-		return fmt.Errorf("unexpected product event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected product event type: %s", eventModel.Type))
 	}
+	if err != nil {
+		sp.logger.Error("Failed to upsert product", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe product event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handlePriceEvent(ctx context.Context, price *stripe.Price, eventType stripe.EventType) error {
-	partialPrice := &models.PartialPrice{
-		ID: price.ID,
+func (sp *StripePayment) handlePriceEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe price event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal price event", zap.Error(err))
+		return
 	}
 
-	if price.Product != nil {
-		partialPrice.ProductID = &price.Product.ID
+	priceModel := new(stripe.Price)
+	if err := json.Unmarshal(eventModel.Data.Raw, &priceModel); err != nil {
+		sp.logger.Error("Failed to unmarshal price event", zap.Error(err))
+		return
 	}
-	partialPrice.Active = &price.Active
-	if price.Currency != "" {
-		partialPrice.Currency = &price.Currency
+
+	partialPrice := &models.PartialPrice{
+		ID: priceModel.ID,
 	}
-	if price.UnitAmount > 0 {
-		unitAmount := float64(price.UnitAmount) / 100
+
+	if priceModel.Product != nil {
+		partialPrice.ProductID = &priceModel.Product.ID
+	}
+	partialPrice.Active = &priceModel.Active
+	if priceModel.Currency != "" {
+		partialPrice.Currency = &priceModel.Currency
+	}
+	if priceModel.UnitAmount > 0 {
+		unitAmount := float64(priceModel.UnitAmount) / 100
 		partialPrice.UnitAmount = &unitAmount
 	}
-	if price.Type != "" {
-		partialPrice.Type = &price.Type
+	if priceModel.Type != "" {
+		partialPrice.Type = &priceModel.Type
 	}
-	if price.Recurring != nil {
-		if price.Recurring.Interval != "" {
-			partialPrice.RecurringInterval = &price.Recurring.Interval
+	if priceModel.Recurring != nil {
+		if priceModel.Recurring.Interval != "" {
+			partialPrice.RecurringInterval = &priceModel.Recurring.Interval
 		}
-		if price.Recurring.IntervalCount > 0 {
-			intervalCount := int32(price.Recurring.IntervalCount)
+		if priceModel.Recurring.IntervalCount > 0 {
+			intervalCount := int32(priceModel.Recurring.IntervalCount)
 			partialPrice.RecurringIntervalCount = &intervalCount
 		}
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "price.created", "price.updated":
-		return sp.price.Upsert(ctx, partialPrice)
+		err = sp.price.Upsert(ctx, partialPrice)
 	case "price.deleted":
-		return sp.price.Delete(ctx, price.ID)
+		err = sp.price.Delete(ctx, priceModel.ID)
 	default:
-		return fmt.Errorf("unexpected price event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected price event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert price", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe price event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handlePaymentMethodEvent(ctx context.Context, paymentMethod *stripe.PaymentMethod, eventType stripe.EventType) error {
+func (sp *StripePayment) handlePaymentMethodEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe payment method event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal payment method event", zap.Error(err))
+		return
+	}
+
+	paymentMethod := new(stripe.PaymentMethod)
+	if err := json.Unmarshal(eventModel.Data.Raw, &paymentMethod); err != nil {
+		sp.logger.Error("Failed to unmarshal payment method event", zap.Error(err))
+		return
+	}
+
 	partialPaymentMethod := &models.PartialPaymentMethod{
 		ID: paymentMethod.ID,
 	}
@@ -1092,99 +1202,178 @@ func (sp *StripePayment) handlePaymentMethodEvent(ctx context.Context, paymentMe
 		}
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "payment_method.attached", "payment_method.updated":
-		return sp.paymentMethod.Upsert(ctx, partialPaymentMethod)
+		err = sp.paymentMethod.Upsert(ctx, partialPaymentMethod)
 	case "payment_method.detached":
-		return sp.paymentMethod.Delete(ctx, paymentMethod.ID)
+		err = sp.paymentMethod.Delete(ctx, paymentMethod.ID)
 	default:
-		return fmt.Errorf("unexpected payment method event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected payment method event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert payment method", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe payment method event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleCouponEvent(ctx context.Context, coupon *stripe.Coupon, eventType stripe.EventType) error {
-	partialCoupon := &models.PartialCoupon{
-		ID: coupon.ID,
+func (sp *StripePayment) handleCouponEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe coupon event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal coupon event", zap.Error(err))
+		return
 	}
 
-	if coupon.Name != "" {
-		partialCoupon.Name = &coupon.Name
+	couponModel := new(stripe.Coupon)
+	if err := json.Unmarshal(eventModel.Data.Raw, &couponModel); err != nil {
+		sp.logger.Error("Failed to unmarshal coupon event", zap.Error(err))
+		return
 	}
-	if coupon.Currency != "" {
-		partialCoupon.Currency = &coupon.Currency
+	partialCoupon := &models.PartialCoupon{
+		ID: couponModel.ID,
 	}
-	if coupon.Duration != "" {
-		partialCoupon.Duration = &coupon.Duration
+
+	if couponModel.Name != "" {
+		partialCoupon.Name = &couponModel.Name
 	}
-	timesRedeemed := int32(coupon.TimesRedeemed)
+	if couponModel.Currency != "" {
+		partialCoupon.Currency = &couponModel.Currency
+	}
+	if couponModel.Duration != "" {
+		partialCoupon.Duration = &couponModel.Duration
+	}
+	timesRedeemed := int32(couponModel.TimesRedeemed)
 	partialCoupon.TimesRedeemed = &timesRedeemed
-	partialCoupon.Valid = &coupon.Valid
-	if coupon.Created > 0 {
-		createdAt := time.Unix(coupon.Created, 0)
+	partialCoupon.Valid = &couponModel.Valid
+	if couponModel.Created > 0 {
+		createdAt := time.Unix(couponModel.Created, 0)
 		partialCoupon.CreatedAt = &createdAt
 	}
 
-	if coupon.AmountOff > 0 {
-		partialCoupon.AmountOff = &coupon.AmountOff
+	if couponModel.AmountOff > 0 {
+		partialCoupon.AmountOff = &couponModel.AmountOff
 	}
-	if coupon.PercentOff > 0 {
-		partialCoupon.PercentOff = &coupon.PercentOff
+	if couponModel.PercentOff > 0 {
+		partialCoupon.PercentOff = &couponModel.PercentOff
 	}
-	if coupon.DurationInMonths > 0 {
-		durationInMonths := int(coupon.DurationInMonths)
+	if couponModel.DurationInMonths > 0 {
+		durationInMonths := int(couponModel.DurationInMonths)
 		partialCoupon.DurationInMonths = &durationInMonths
 	}
-	if coupon.MaxRedemptions > 0 {
-		maxRedemptions := int(coupon.MaxRedemptions)
+	if couponModel.MaxRedemptions > 0 {
+		maxRedemptions := int(couponModel.MaxRedemptions)
 		partialCoupon.MaxRedemptions = &maxRedemptions
 	}
-	if coupon.RedeemBy > 0 {
-		redeemBy := time.Unix(coupon.RedeemBy, 0)
+	if couponModel.RedeemBy > 0 {
+		redeemBy := time.Unix(couponModel.RedeemBy, 0)
 		partialCoupon.RedeemBy = &redeemBy
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "coupon.created", "coupon.updated":
-		return sp.coupon.Upsert(ctx, partialCoupon)
+		err = sp.coupon.Upsert(ctx, partialCoupon)
 	case "coupon.deleted":
-		return sp.coupon.Delete(ctx, coupon.ID)
+		err = sp.coupon.Delete(ctx, couponModel.ID)
 	default:
-		return fmt.Errorf("unexpected coupon event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected coupon event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert coupon", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe coupon event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleDiscountEvent(ctx context.Context, discount *stripe.Discount, eventType stripe.EventType) error {
-	partialDiscount := &models.PartialDiscount{
-		ID: discount.ID,
+func (sp *StripePayment) handleDiscountEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe discount event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal discount event", zap.Error(err))
+		return
 	}
 
-	if discount.Customer != nil {
-		partialDiscount.CustomerID = &discount.Customer.ID
+	discountModel := new(stripe.Discount)
+	if err := json.Unmarshal(eventModel.Data.Raw, &discountModel); err != nil {
+		sp.logger.Error("Failed to unmarshal discount event", zap.Error(err))
+		return
 	}
-	if discount.Coupon != nil {
-		partialDiscount.CouponID = &discount.Coupon.ID
+
+	partialDiscount := &models.PartialDiscount{
+		ID: discountModel.ID,
 	}
-	if discount.Start > 0 {
-		start := time.Unix(discount.Start, 0)
+
+	if discountModel.Customer != nil {
+		partialDiscount.CustomerID = &discountModel.Customer.ID
+	}
+	if discountModel.Coupon != nil {
+		partialDiscount.CouponID = &discountModel.Coupon.ID
+	}
+	if discountModel.Start > 0 {
+		start := time.Unix(discountModel.Start, 0)
 		partialDiscount.Start = &start
 		partialDiscount.CreatedAt = &start
 	}
-	if discount.End > 0 {
-		end := time.Unix(discount.End, 0)
+	if discountModel.End > 0 {
+		end := time.Unix(discountModel.End, 0)
 		partialDiscount.End = &end
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "customer.discount.created", "customer.discount.updated":
-		return sp.discount.Upsert(ctx, partialDiscount)
+		err = sp.discount.Upsert(ctx, partialDiscount)
 	case "customer.discount.deleted":
-		return sp.discount.Delete(ctx, discount.ID)
+		err = sp.discount.Delete(ctx, discountModel.ID)
 	default:
-		return fmt.Errorf("unexpected discount event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected discount event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert discount object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe discount event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handlePromotionCodeEvent(ctx context.Context, promotionCode *stripe.PromotionCode, eventType stripe.EventType) error {
+func (sp *StripePayment) handlePromotionCodeEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe promotion code event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal promotion code event", zap.Error(err))
+		return
+	}
+
+	promotionCode := new(stripe.PromotionCode)
+	if err := json.Unmarshal(eventModel.Data.Raw, &promotionCode); err != nil {
+		sp.logger.Error("Failed to unmarshal promotion code event", zap.Error(err))
+		return
+	}
 	partialPromotionCode := &models.PartialPromotionCode{
 		ID: promotionCode.ID,
 	}
@@ -1214,15 +1403,40 @@ func (sp *StripePayment) handlePromotionCodeEvent(ctx context.Context, promotion
 		partialPromotionCode.CreatedAt = &createdAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "promotion_code.created", "promotion_code.updated":
-		return sp.promotionCode.Upsert(ctx, partialPromotionCode)
+		err = sp.promotionCode.Upsert(ctx, partialPromotionCode)
 	default:
-		return fmt.Errorf("unexpected promotion code event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected promotionCode event type: %s", eventModel.Type))
 	}
+	if err != nil {
+		sp.logger.Error("Failed to upsert promotion code object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe promotion code event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleCheckoutSessionEvent(ctx context.Context, session *stripe.CheckoutSession, eventType stripe.EventType) error {
+func (sp *StripePayment) handleCheckoutSessionEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe checkout session event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal checkout session event", zap.Error(err))
+		return
+	}
+
+	session := new(stripe.CheckoutSession)
+	if err := json.Unmarshal(eventModel.Data.Raw, &session); err != nil {
+		sp.logger.Error("Failed to unmarshal checkout session event", zap.Error(err))
+		return
+	}
 	partialSession := &models.PartialCheckoutSession{
 		ID: session.ID,
 	}
@@ -1245,62 +1459,113 @@ func (sp *StripePayment) handleCheckoutSessionEvent(ctx context.Context, session
 		partialSession.CreatedAt = &createdAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "checkout.session.completed", "checkout.session.async_payment_succeeded",
 		"checkout.session.async_payment_failed", "checkout.session.expired":
-		return sp.checkoutSession.Upsert(ctx, partialSession)
+		err = sp.checkoutSession.Upsert(ctx, partialSession)
 	default:
-		return fmt.Errorf("unexpected checkout session event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected checkoutSession event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert checkout session object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe checkout session event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleQuoteEvent(ctx context.Context, quote *stripe.Quote, eventType stripe.EventType) error {
+func (sp *StripePayment) handleQuoteEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe quote event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal quote event", zap.Error(err))
+		return
+	}
+	quoteModel := new(stripe.Quote)
+	if err := json.Unmarshal(eventModel.Data.Raw, &quoteModel); err != nil {
+		sp.logger.Error("Failed to unmarshal quote event", zap.Error(err))
+		return
+	}
+
 	partialQuote := &models.PartialQuote{
-		ID: quote.ID,
+		ID: quoteModel.ID,
 	}
 
-	if quote.Customer != nil {
-		partialQuote.CustomerID = &quote.Customer.ID
+	if quoteModel.Customer != nil {
+		partialQuote.CustomerID = &quoteModel.Customer.ID
 	}
-	partialQuote.Status = &quote.Status
+	partialQuote.Status = &quoteModel.Status
 
-	amountTotal := quote.AmountTotal
+	amountTotal := quoteModel.AmountTotal
 	partialQuote.AmountTotal = &amountTotal
 
-	partialQuote.Currency = &quote.Currency
+	partialQuote.Currency = &quoteModel.Currency
 
-	if quote.ExpiresAt > 0 {
-		validUntil := time.Unix(quote.ExpiresAt, 0)
+	if quoteModel.ExpiresAt > 0 {
+		validUntil := time.Unix(quoteModel.ExpiresAt, 0)
 		partialQuote.ValidUntil = &validUntil
 	}
 
 	// Stripe的Quote模型中沒有直接的AcceptedAt字段，
 	// 從StatusTransitions中獲取，如果存在的話
-	if quote.StatusTransitions != nil && quote.StatusTransitions.AcceptedAt > 0 {
-		acceptedAt := time.Unix(quote.StatusTransitions.AcceptedAt, 0)
+	if quoteModel.StatusTransitions != nil && quoteModel.StatusTransitions.AcceptedAt > 0 {
+		acceptedAt := time.Unix(quoteModel.StatusTransitions.AcceptedAt, 0)
 		partialQuote.AcceptedAt = &acceptedAt
 	}
 
 	// CanceledAt也可以從StatusTransitions中獲取
-	if quote.StatusTransitions != nil && quote.StatusTransitions.CanceledAt > 0 {
-		canceledAt := time.Unix(quote.StatusTransitions.CanceledAt, 0)
+	if quoteModel.StatusTransitions != nil && quoteModel.StatusTransitions.CanceledAt > 0 {
+		canceledAt := time.Unix(quoteModel.StatusTransitions.CanceledAt, 0)
 		partialQuote.CanceledAt = &canceledAt
 	}
 
-	if quote.Created > 0 {
-		createdAt := time.Unix(quote.Created, 0)
+	if quoteModel.Created > 0 {
+		createdAt := time.Unix(quoteModel.Created, 0)
 		partialQuote.CreatedAt = &createdAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "quote.created", "quote.finalized", "quote.accepted", "quote.canceled":
-		return sp.quote.Upsert(ctx, partialQuote)
+		err = sp.quote.Upsert(ctx, partialQuote)
 	default:
-		return fmt.Errorf("unexpected quote event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected quote event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert quote object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe quote event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handlePaymentLinkEvent(ctx context.Context, paymentLink *stripe.PaymentLink, eventType stripe.EventType) error {
+func (sp *StripePayment) handlePaymentLinkEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe payment link event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal payment link event", zap.Error(err))
+		return
+	}
+	paymentLink := new(stripe.PaymentLink)
+	if err := json.Unmarshal(eventModel.Data.Raw, &paymentLink); err != nil {
+		sp.logger.Error("Failed to unmarshal payment link event", zap.Error(err))
+		return
+	}
 	partialPaymentLink := &models.PartialPaymentLink{
 		ID: paymentLink.ID,
 	}
@@ -1318,15 +1583,40 @@ func (sp *StripePayment) handlePaymentLinkEvent(ctx context.Context, paymentLink
 
 	partialPaymentLink.Currency = &paymentLink.Currency
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "payment_link.created", "payment_link.updated":
-		return sp.paymentLink.Upsert(ctx, partialPaymentLink)
+		err = sp.paymentLink.Upsert(ctx, partialPaymentLink)
 	default:
-		return fmt.Errorf("unexpected payment link event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected payment link event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert payment link object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe payment link event processed", zap.String("event_id", msg.Subject))
 }
 
-func (sp *StripePayment) handleTaxRateEvent(ctx context.Context, taxRate *stripe.TaxRate, eventType stripe.EventType) error {
+func (sp *StripePayment) handleTaxRateEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe tax rate event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal tax rate event", zap.Error(err))
+		return
+	}
+	taxRate := new(stripe.TaxRate)
+	if err := json.Unmarshal(eventModel.Data.Raw, &taxRate); err != nil {
+		sp.logger.Error("Failed to unmarshal tax rate link event", zap.Error(err))
+		return
+	}
 	partialTaxRate := &models.PartialTaxRate{
 		ID: taxRate.ID,
 	}
@@ -1347,61 +1637,106 @@ func (sp *StripePayment) handleTaxRateEvent(ctx context.Context, taxRate *stripe
 		partialTaxRate.CreatedAt = &createdAt
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "tax_rate.created", "tax_rate.updated":
-		return sp.taxRate.Upsert(ctx, partialTaxRate)
+		err = sp.taxRate.Upsert(ctx, partialTaxRate)
 	default:
-		return fmt.Errorf("unexpected tax rate event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected tax rate event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert tax rate object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe tax rate event processed", zap.String("event_id", msg.Subject))
+
 }
 
-func (sp *StripePayment) handleReviewEvent(ctx context.Context, review *stripe.Review, eventType stripe.EventType) error {
+func (sp *StripePayment) handleReviewEvent(msg *nats.Msg) {
+
+	sp.logger.Info("Stripe review event received", zap.String("event_id", msg.Subject))
+
+	ctx := context.Background()
+	var eventModel stripe.Event
+	if err := json.Unmarshal(msg.Data, &eventModel); err != nil {
+		sp.logger.Error("Failed to unmarshal review event", zap.Error(err))
+		return
+	}
+	reviewModel := new(stripe.Review)
+	if err := json.Unmarshal(eventModel.Data.Raw, &reviewModel); err != nil {
+		sp.logger.Error("Failed to unmarshal review event", zap.Error(err))
+		return
+	}
 	partialReview := &models.PartialReview{
-		ID: review.ID,
+		ID: reviewModel.ID,
 	}
 
-	if review.PaymentIntent != nil {
-		partialReview.PaymentIntentID = &review.PaymentIntent.ID
+	if reviewModel.PaymentIntent != nil {
+		partialReview.PaymentIntentID = &reviewModel.PaymentIntent.ID
 	}
-	partialReview.Reason = &review.Reason
+	partialReview.Reason = &reviewModel.Reason
 
 	// 根據 Open 字段設置狀態
 	var status string
-	if review.Open {
+	if reviewModel.Open {
 		status = "open"
 	} else {
 		status = "closed"
 	}
 	partialReview.Status = &status
 
-	if review.Created > 0 {
-		createdAt := time.Unix(review.Created, 0)
+	if reviewModel.Created > 0 {
+		createdAt := time.Unix(reviewModel.Created, 0)
 		partialReview.CreatedAt = &createdAt
 		// 使用 Created 時間作為 OpenedAt
 		partialReview.OpenedAt = &createdAt
 	}
 
 	// 如果 Review 已關閉，設置 ClosedAt
-	if !review.Open {
+	if !reviewModel.Open {
 		closedAt := time.Now()
 		partialReview.ClosedAt = &closedAt
 	}
 
 	// ClosedReason
-	if review.ClosedReason != "" {
-		partialReview.ClosedReason = &review.ClosedReason
+	if reviewModel.ClosedReason != "" {
+		partialReview.ClosedReason = &reviewModel.ClosedReason
 	}
 
-	switch eventType {
+	var err error
+	switch eventModel.Type {
 	case "review.opened", "review.closed":
-		return sp.review.Upsert(ctx, partialReview)
+		err = sp.review.Upsert(ctx, partialReview)
 	default:
-		return fmt.Errorf("unexpected review event type: %s", eventType)
+		sp.logger.Error(fmt.Sprintf("unexpected review event type: %s", eventModel.Type))
 	}
+
+	if err != nil {
+		sp.logger.Error("Failed to upsert review object", zap.Error(err))
+	}
+
+	if err = sp.natsConn.Publish(NatsSubjectEventProcessed, msg.Data); err != nil {
+		sp.logger.Error("Failed to publish event to NATS", zap.Error(err))
+	}
+
+	sp.logger.Info("Stripe review event processed", zap.String("event_id", msg.Subject))
+
 }
 
 func (sp *StripePayment) Close() {
 	sp.logger.Info("Initiating graceful shutdown of workers and dispatcher")
-	sp.dispatcher.Stop() // 停止 dispatcher 和 workers
+	for _, sub := range sp.subscriptions {
+		if sub != nil {
+			if err := sub.Unsubscribe(); err != nil {
+				sp.logger.Error("Failed to unsubscribe", zap.Error(err))
+			}
+		}
+	}
+	sp.natsConn.Close()
 	sp.logger.Info("StripePayment successfully shutdown")
 }

@@ -64,7 +64,7 @@ func (ch *customerHandler) UpdateCustomer(c echo.Context) error {
 	}
 	customer.ID = id
 
-	if err := ch.Payment.UpdateCustomerBalance(c.Request().Context(), &customer); err != nil {
+	if err := ch.Payment.UpdateCustomerBalance(&customer); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update customer"})
 	}
 

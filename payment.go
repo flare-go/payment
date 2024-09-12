@@ -11,8 +11,8 @@ import (
 type Payment interface {
 	CreateCustomer(ctx context.Context, email, name string) error // Interacts with Stripe
 	GetCustomer(ctx context.Context, customerID string) (*models.Customer, error)
-	UpdateCustomerBalance(ctx context.Context, customer *models.Customer) error // Interacts with Stripe
-	DeleteCustomer(customerID string) error                                     // Interacts with Stripe
+	UpdateCustomerBalance(customer *models.Customer) error // Interacts with Stripe
+	DeleteCustomer(customerID string) error                // Interacts with Stripe
 
 	CreateProduct(req models.Product) error // Interacts with Stripe
 	GetProductWithActivePrices(ctx context.Context, productID string) (*models.Product, error)

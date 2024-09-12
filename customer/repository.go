@@ -237,10 +237,16 @@ func (r *repository) Upsert(ctx context.Context, tx pgx.Tx, customer *models.Par
     WHERE customers.id = @id
     `
 
+	var balance int64
+	if customer.Balance != nil {
+		balance = *customer.Balance
+	}
+
 	now := time.Now()
 	args := pgx.NamedArgs{
 		"id":         customer.ID,
-		"balance":    customer.Balance,
+		"user_email": customer.Email,
+		"balance":    balance,
 		"created_at": customer.CreatedAt,
 		"updated_at": now,
 	}
